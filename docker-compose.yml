@@ -1,6 +1,6 @@
 services:
   rules-site:
-    build: .
+    image: rules-site:latest
     container_name: rules-site
     restart: unless-stopped
     ports:
