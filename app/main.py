@@ -30,3 +30,8 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 app.include_router(public_router)
 app.include_router(admin_router)
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
