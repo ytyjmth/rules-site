@@ -226,9 +226,9 @@ async def update_rule(
     if file and file.filename:
         data = await file.read()
         if len(data) > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）",
+            return _error_response(
+                request,
+                f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）",
             )
         with open(filepath, "wb") as f:
             f.write(data)
