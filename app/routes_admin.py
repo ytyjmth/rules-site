@@ -9,13 +9,17 @@ from collections import defaultdict
 
 from app.config import ADMIN_USERNAME, ADMIN_PASSWORD, RULES_DIR, SITE_TITLE, SITE_NAME, SITE_VERSION, SITE_ICP, SITE_AI_MODEL
 from app.database import get_db
-from app.auth import create_login_token, require_admin_redirect, get_current_user
+from app.auth import (
+    create_login_token, require_admin_redirect, get_current_user,
+    generate_csrf_token, validate_csrf,
+)
 
 router = APIRouter(prefix="/admin")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 templates.env.autoescape = True
+templates.env.globals["csrf_token"] = generate_csrf_token
 
 # ── 登录速率限制 ─────────────────────────────────────────
 LOGIN_RATE_LIMIT_WINDOW = 300   # 5 分钟
@@ -78,7 +82,8 @@ def login_page(request: Request):
 
 
 @router.post("/login")
-def login(request: Request, username: str = Form(...), password: str = Form(...)):
+def login(request: Request, username: str = Form(...), password: str = Form(...), csrf_token: str = Form(None)):
+    validate_csrf(request, csrf_token)
     client_ip = request.client.host if request.client else "unknown"
 
     if not _check_login_rate_limit(client_ip):
@@ -90,9 +95,10 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
 
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         resp = RedirectResponse(url="/admin", status_code=302)
+        is_https = request.url.scheme == "https"
         resp.set_cookie(
             "token", create_login_token(username),
-            httponly=True, samesite="lax", secure=True, max_age=86400 * 7,
+            httponly=True, samesite="lax", secure=is_https, max_age=86400 * 7,
         )
         _login_attempts.pop(client_ip, None)
         return resp
@@ -143,10 +149,13 @@ async def create_rule(
     description: str = Form(""),
     content: str = Form(""),
     file: UploadFile = File(None),
+    csrf_token: str = Form(None),
 ):
     redir = require_admin_redirect(request)
     if redir:
         return redir
+
+    validate_csrf(request, csrf_token)
 
     if not filename.endswith((".yaml", ".yml")):
         filename += ".yaml"
@@ -187,10 +196,13 @@ async def update_rule(
     description: str = Form(None),
     content: str = Form(None),
     file: UploadFile = File(None),
+    csrf_token: str = Form(None),
 ):
     redir = require_admin_redirect(request)
     if redir:
         return redir
+
+    validate_csrf(request, csrf_token)
 
     with get_db() as conn:
         rule = conn.execute("SELECT * FROM rules WHERE id=?", (rule_id,)).fetchone()
@@ -230,10 +242,12 @@ async def update_rule(
 # ── Delete ─────────────────────────────────────────────
 
 @router.post("/rules/{rule_id}/delete")
-async def delete_rule(rule_id: int, request: Request):
+async def delete_rule(rule_id: int, request: Request, csrf_token: str = Form(None)):
     redir = require_admin_redirect(request)
     if redir:
         return redir
+
+    validate_csrf(request, csrf_token)
 
     with get_db() as conn:
         rule = conn.execute("SELECT * FROM rules WHERE id=?", (rule_id,)).fetchone()

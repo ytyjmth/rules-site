@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
+from app.auth import generate_csrf_token
 from app.database import get_db
 from app.config import RULES_DIR, SITE_TITLE, SITE_NAME, SITE_VERSION, SITE_ICP, SITE_AI_MODEL
 import os
@@ -12,6 +13,7 @@ router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 templates.env.autoescape = True
+templates.env.globals["csrf_token"] = generate_csrf_token
 
 
 @router.get("/")
