@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录</title>
+    <link rel="stylesheet" href="/static/css/login.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📜</text></svg>">
+</head>
+<body>
+    <div class="login-wrapper">
+        <div class="login-header">
+            <div class="icon">🔑</div>
+            <h2>管理员入口</h2>
+            <p>请输入凭证以继续</p>
+        </div>
+        <div class="login-card">
+            {% if error %}
+            <div class="error">{{ error }}</div>
+            {% endif %}
+            <form method="post" action="/admin/login">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" name="username" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" name="password" required>
+                </div>
+                <button type="submit" class="btn-login">登 录</button>
+            </form>
+        </div>
+        <div class="back-link">
+            <a href="/">← 返回首页</a>
+        </div>
+    </div>
+</body>
+</html>
