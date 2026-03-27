@@ -49,6 +49,16 @@
                             <td>{{ r.display_name }}</td>
                             <td class="size">{{ "%.1f"|format(r.size / 1024) }} KB</td>
                             <td class="actions">
+                                <form method="post" action="/admin/rules/{{ r.id }}/move" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="direction" value="up">
+                                    <button type="submit" class="btn btn-sm btn-ghost" title="上移">↑</button>
+                                </form>
+                                <form method="post" action="/admin/rules/{{ r.id }}/move" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="direction" value="down">
+                                    <button type="submit" class="btn btn-sm btn-ghost" title="下移">↓</button>
+                                </form>
                                 <button class="btn btn-sm btn-ghost" onclick='openEdit({{ r.id }}, {{ r.filename | tojson }}, {{ r.display_name | tojson }}, {{ r.description | tojson }})'>编辑</button>
                                 <button class="btn btn-sm btn-danger" onclick='deleteRule({{ r.id }}, {{ r.filename | tojson }})'>删除</button>
                             </td>

@@ -261,3 +261,46 @@ async def delete_rule(rule_id: int, request: Request, csrf_token: str = Form(Non
         conn.execute("DELETE FROM rules WHERE id=?", (rule_id,))
 
     return RedirectResponse(url="/admin", status_code=303)
+
+
+# ── Move (Sort) ────────────────────────────────────────
+
+@router.post("/rules/{rule_id}/move")
+async def move_rule(
+    rule_id: int,
+    request: Request,
+    direction: str = Form(...),
+    csrf_token: str = Form(None),
+):
+    redir = require_admin_redirect(request)
+    if redir:
+        return redir
+    validate_csrf(request, csrf_token)
+
+    if direction not in ("up", "down"):
+        raise HTTPException(400, "direction must be 'up' or 'down'")
+
+    with get_db() as conn:
+        rule = conn.execute("SELECT * FROM rules WHERE id=?", (rule_id,)).fetchone()
+        if not rule:
+            raise HTTPException(404, "Rule not found")
+
+        if direction == "up":
+            neighbor = conn.execute(
+                "SELECT * FROM rules WHERE sort_order < ? OR (sort_order = ? AND id < ?) ORDER BY sort_order DESC, id DESC LIMIT 1",
+                (rule["sort_order"], rule["sort_order"], rule_id),
+            ).fetchone()
+        else:
+            neighbor = conn.execute(
+                "SELECT * FROM rules WHERE sort_order > ? OR (sort_order = ? AND id > ?) ORDER BY sort_order ASC, id ASC LIMIT 1",
+                (rule["sort_order"], rule["sort_order"], rule_id),
+            ).fetchone()
+
+        if not neighbor:
+            return RedirectResponse(url="/admin", status_code=303)
+
+        # Swap sort_order
+        conn.execute("UPDATE rules SET sort_order=? WHERE id=?", (neighbor["sort_order"], rule_id))
+        conn.execute("UPDATE rules SET sort_order=? WHERE id=?", (rule["sort_order"], neighbor["id"]))
+
+    return RedirectResponse(url="/admin", status_code=303)
