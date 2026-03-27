@@ -9,14 +9,11 @@ services:
       - ./data:/app/data
     environment:
       - ADMIN_USERNAME=admin
-      # ⚠️ 警告: 请在生产环境中修改 ADMIN_PASSWORD 为强密码！
-      # ⚠️ WARNING: Change ADMIN_PASSWORD to a strong password in production!
-      - ADMIN_PASSWORD=changeme
+      # ⚠️ 必须设置以下两项，否则容器会启动失败
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - SECRET_KEY=${SECRET_KEY}
       - SITE_TITLE=规则文档
       - SITE_NAME=雨天依旧美
       - SITE_VERSION=1.0.0
       - SITE_AI_MODEL=
       - SITE_ICP=陕ICP备2020016374号
-      # ⚠️ 警告: 请在生产环境中修改 SECRET_KEY 为随机字符串！
-      # ⚠️ WARNING: Change SECRET_KEY to a random string in production!
-      - SECRET_KEY=change-me-to-random-string

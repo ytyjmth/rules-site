@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from app.database import init_db
 from app.routes_public import router as public_router
 from app.routes_admin import router as admin_router
-from app.config import check_security_warnings
+from app.config import check_security
 
 # 获取当前文件所在目录，用于构造绝对路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
     init_db()
-    check_security_warnings()
+    check_security()
     yield
     # 关闭时执行（如需要）
 

@@ -1,6 +1,8 @@
 """CSRF 防护测试。"""
 import os
 os.environ["DATA_DIR"] = os.path.join(os.path.dirname(__file__), "data")
+os.environ["SECRET_KEY"] = "test-secret-key-for-csrf-tests"
+os.environ["ADMIN_PASSWORD"] = "test-password-for-csrf"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,7 +20,7 @@ def do_login(client):
     """辅助：完成登录流程，确保 cookie 到位。"""
     token = generate_csrf_token()
     client.post("/admin/login", data={
-        "username": "admin", "password": "changeme",
+        "username": "admin", "password": "test-password-for-csrf",
         "csrf_token": token
     })
 
@@ -45,13 +47,13 @@ class TestLoginCSRF:
 
     def test_login_without_csrf_rejected(self, client):
         r = client.post("/admin/login", data={
-            "username": "admin", "password": "changeme"
+            "username": "admin", "password": "test-password-for-csrf"
         })
         assert r.status_code == 403
 
     def test_login_with_fake_csrf_rejected(self, client):
         r = client.post("/admin/login", data={
-            "username": "admin", "password": "changeme",
+            "username": "admin", "password": "test-password-for-csrf",
             "csrf_token": "fake:token:xxx"
         })
         assert r.status_code == 403
@@ -59,7 +61,7 @@ class TestLoginCSRF:
     def test_login_with_valid_csrf_succeeds(self, client):
         token = generate_csrf_token()
         r = client.post("/admin/login", data={
-            "username": "admin", "password": "changeme",
+            "username": "admin", "password": "test-password-for-csrf",
             "csrf_token": token
         })
         assert r.status_code == 302
