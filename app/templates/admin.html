@@ -15,8 +15,15 @@
         <div class="topbar">
             <h1>⚙ 管理面板</h1>
             <div class="topbar-nav">
+                <form method="post" action="/admin/sync" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" style="border:none;background:none;color:var(--ink-faint);font-size:.65em;cursor:pointer;opacity:.4;transition:opacity .15s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.4" title="扫描 data/rules/ 目录同步文件到数据库">⟳ 同步</button>
+                </form>
                 <a href="/">查看前台</a>
-                <a href="/admin/logout">退出登录</a>
+                <form method="post" action="/admin/logout" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" style="border:none;background:none;color:inherit;font:inherit;cursor:pointer;text-decoration:underline;">退出登录</button>
+                </form>
             </div>
         </div>
 
@@ -32,44 +39,66 @@
         <!-- Tab: 规则列表 -->
         <div id="tab-list" class="tab-content active">
             <div class="card">
-                {% if rules %}
+                {% if rules or q %}
                 <table>
                     <thead>
                         <tr>
-                            <th>文件名</th>
-                            <th>显示名称</th>
-                            <th>大小</th>
-                            <th>操作</th>
+                            <th onclick="sortTable(0)" style="cursor:pointer" class="sortable">文件名 <span class="sort-arrow"></span></th>
+                            <th onclick="sortTable(1)" style="cursor:pointer" class="sortable">显示名称 <span class="sort-arrow"></span></th>
+                            <th onclick="sortTable(2)" style="cursor:pointer" class="sortable">大小 <span class="sort-arrow"></span></th>
+                            <th class="header-with-search">
+                                <form method="get" action="/admin/" class="header-search">
+                                    <input type="text" name="q" value="{{ q }}" placeholder="搜索…" class="header-search-input">
+                                    <button type="submit" class="header-search-btn">🔍</button>
+                                    {% if q %}<a href="/admin/" class="header-search-clear">✕</a>{% endif %}
+                                </form>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
+                        {% if rules %}
                         {% for r in rules %}
                         <tr>
                             <td><span class="file-badge">{{ r.filename }}</span></td>
                             <td>{{ r.display_name }}</td>
                             <td class="size">{{ "%.1f"|format(r.size / 1024) }} KB</td>
                             <td class="actions">
-                                <form method="post" action="/admin/rules/{{ r.id }}/move" style="display:inline">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="direction" value="up">
-                                    <button type="submit" class="btn btn-sm btn-ghost" title="上移">↑</button>
-                                </form>
-                                <form method="post" action="/admin/rules/{{ r.id }}/move" style="display:inline">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="direction" value="down">
-                                    <button type="submit" class="btn btn-sm btn-ghost" title="下移">↓</button>
-                                </form>
                                 <button class="btn btn-sm btn-ghost" onclick='openEdit({{ r.id }}, {{ r.filename | tojson }}, {{ r.display_name | tojson }}, {{ r.description | tojson }})'>编辑</button>
                                 <button class="btn btn-sm btn-danger" onclick='deleteRule({{ r.id }}, {{ r.filename | tojson }})'>删除</button>
                             </td>
                         </tr>
                         {% endfor %}
+                        {% else %}
+                        <tr><td colspan="4" style="text-align:center; padding:32px; color:var(--ink-faint); font-style:italic;">
+                            {% if q %}没有找到匹配的规则{% else %}档案室尚无文献，点击「添加规则」开始归档{% endif %}
+                        </td></tr>
+                        {% endif %}
                     </tbody>
                 </table>
                 {% else %}
                 <div class="empty-state">
                     <div class="icon">📂</div>
                     <p>档案室尚无文献，点击「添加规则」开始归档</p>
+                </div>
+                {% endif %}
+
+                {% if total_pages > 1 %}
+                <div class="pagination" style="display:flex; justify-content:center; gap:6px; margin-top:20px; padding-top:16px; border-top:1px solid var(--border-light);">
+                    {% if page > 1 %}
+                    <a href="/admin/?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-ghost">‹ 上一页</a>
+                    {% endif %}
+                    {% for p in range(1, total_pages + 1) %}
+                        {% if p == page %}
+                        <span class="btn btn-sm" style="background:var(--ink);color:var(--paper);border-color:var(--ink);">{{ p }}</span>
+                        {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                        <a href="/admin/?page={{ p }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-ghost">{{ p }}</a>
+                        {% elif p == page - 3 or p == page + 3 %}
+                        <span class="btn btn-sm btn-ghost" style="border:none;">…</span>
+                        {% endif %}
+                    {% endfor %}
+                    {% if page < total_pages %}
+                    <a href="/admin/?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-ghost">下一页 ›</a>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
@@ -114,7 +143,7 @@
     <!-- 编辑弹窗 -->
     <div class="modal-overlay" id="editModal">
         <div class="modal">
-            <h2>编辑规则</h2>
+            <h2>编辑规则 <code id="editFilename" style="font-family:'JetBrains Mono',monospace; font-size:.7em; color:var(--ink-faint);"></code></h2>
             <form method="post" id="editForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-row">
@@ -128,11 +157,12 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>更新内容（粘贴新 YAML 覆盖）</label>
-                    <textarea name="content" id="editContent" placeholder="留空则不修改文件内容"></textarea>
+                    <label>规则内容</label>
+                    <textarea name="content" id="editContent" rows="20" spellcheck="false"></textarea>
+                    <div class="form-hint">直接编辑 YAML 内容，留空则不修改</div>
                 </div>
                 <div class="form-group">
-                    <label>或上传新文件</label>
+                    <label>或上传新文件覆盖</label>
                     <input type="file" name="file" accept=".yaml,.yml,.txt">
                 </div>
                 <div class="modal-actions">
@@ -155,8 +185,21 @@
         document.getElementById('editForm').action = '/admin/rules/' + id;
         document.getElementById('editDisplayName').value = displayName;
         document.getElementById('editDescription').value = description || '';
-        document.getElementById('editContent').value = '';
+        document.getElementById('editContent').value = '加载中...';
+        document.getElementById('editContent').disabled = true;
+        document.getElementById('editFilename').textContent = filename;
         document.getElementById('editModal').classList.add('show');
+
+        fetch('/admin/rules/' + id + '/content')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('editContent').value = data.content || '';
+                document.getElementById('editContent').disabled = false;
+            })
+            .catch(() => {
+                document.getElementById('editContent').value = '';
+                document.getElementById('editContent').disabled = false;
+            });
     }
 
     function closeEdit() {
@@ -184,6 +227,43 @@
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeEdit();
     });
+
+    // ── Table Sort ──────────────────────────────
+    let sortState = { col: -1, asc: true };
+    function sortTable(col) {
+        const table = document.querySelector('table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        if (rows.length < 2) return;
+
+        // Toggle direction
+        if (sortState.col === col) {
+            sortState.asc = !sortState.asc;
+        } else {
+            sortState.col = col;
+            sortState.asc = true;
+        }
+
+        rows.sort((a, b) => {
+            let va = a.cells[col].textContent.trim();
+            let vb = b.cells[col].textContent.trim();
+
+            // Size column: parse number
+            if (col === 2) {
+                va = parseFloat(va) || 0;
+                vb = parseFloat(vb) || 0;
+                return sortState.asc ? va - vb : vb - va;
+            }
+            return sortState.asc ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+
+        rows.forEach(r => tbody.appendChild(r));
+
+        // Update arrows
+        table.querySelectorAll('.sort-arrow').forEach((el, i) => {
+            el.textContent = (i === col) ? (sortState.asc ? ' ↑' : ' ↓') : '';
+        });
+    }
     </script>
 </body>
 </html>

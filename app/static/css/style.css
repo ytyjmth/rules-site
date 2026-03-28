@@ -92,12 +92,12 @@ body {
 
 .rule-number {
     font-family: 'Playfair Display', serif;
-    font-size: 2.2em;
-    font-weight: 900;
-    color: var(--border);
+    font-size: 1em;
+    font-weight: 700;
+    color: var(--ink-faint);
     line-height: 1;
-    position: absolute;
-    top: 20px; right: 28px;
+    display: inline-block;
+    margin-bottom: 8px;
     user-select: none;
 }
 
@@ -273,12 +273,111 @@ footer a:hover { color: var(--accent); }
     transform: translateX(-50%) translateY(0);
 }
 
+/* ── Search Bar ─────────────────────── */
+.search-bar {
+    display: flex;
+    gap: 0;
+    margin-bottom: 28px;
+}
+.search-bar input {
+    flex: 1;
+    padding: 12px 18px;
+    border: 1.5px solid var(--border);
+    border-right: none;
+    font-family: 'Source Serif 4', serif;
+    font-size: .92em;
+    background: var(--paper);
+    color: var(--ink);
+    outline: none;
+    transition: border-color .2s;
+}
+.search-bar input:focus {
+    border-color: var(--ink);
+}
+.search-bar input::placeholder {
+    color: var(--ink-faint);
+    font-style: italic;
+}
+.search-bar button {
+    padding: 12px 24px;
+    border: 1.5px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    font-family: -apple-system, sans-serif;
+    font-size: .8em;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background .15s;
+}
+.search-bar button:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.search-meta {
+    font-size: .85em;
+    color: var(--ink-faint);
+    margin-bottom: 20px;
+    font-style: italic;
+}
+.search-meta a {
+    color: var(--accent);
+    text-decoration: none;
+    margin-left: 8px;
+}
+.search-meta a:hover {
+    text-decoration: underline;
+}
+
+/* ── Pagination ─────────────────────── */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    margin-top: 36px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-light);
+}
+.page-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--ink-light);
+    font-family: -apple-system, sans-serif;
+    font-size: .82em;
+    text-decoration: none;
+    transition: all .15s;
+    white-space: nowrap;
+}
+.page-btn:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+}
+.page-btn.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+    font-weight: 600;
+}
+.page-btn.dots {
+    border: none;
+    color: var(--ink-faint);
+    min-width: auto;
+}
+
 /* ── Responsive ────────────────────── */
 @media (max-width: 600px) {
     .container { padding: 28px 16px 60px; }
     .page-header h1 { font-size: 1.8em; }
     .rule-card { padding: 20px 18px; }
     .rule-number { font-size: 1.6em; top: 16px; right: 16px; }
+    .rule-number { display: none; }
     .rule-top { flex-direction: column; }
     .actions { width: 100%; }
     .actions .btn { flex: 1; justify-content: center; }

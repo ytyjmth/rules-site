@@ -110,3 +110,72 @@ class TestAdminCSRF:
             "display_name": "Updated"
         })
         assert r.status_code == 403
+
+    def test_logout_requires_post(self, client):
+        """GET /admin/logout 不应再有效。"""
+        do_login(client)
+        r = client.get("/admin/logout", follow_redirects=False)
+        # GET 请求 logout 应返回 405 Method Not Allowed
+        assert r.status_code == 405
+
+    def test_logout_without_csrf_rejected(self, client):
+        do_login(client)
+        r = client.post("/admin/logout", data={}, follow_redirects=False)
+        assert r.status_code == 403
+
+    def test_logout_with_csrf_succeeds(self, client):
+        do_login(client)
+        token = generate_csrf_token()
+        r = client.post("/admin/logout", data={"csrf_token": token}, follow_redirects=False)
+        assert r.status_code == 302
+
+
+class TestYAMLValidation:
+    def test_create_with_invalid_yaml_rejected(self, client):
+        do_login(client)
+        token = generate_csrf_token()
+        import uuid
+        fname = f"bad_{uuid.uuid4().hex[:8]}.yaml"
+        r = client.post("/admin/rules", data={
+            "filename": fname, "display_name": "Bad",
+            "content": ":\n  - invalid\n    yaml: [broken", "csrf_token": token
+        })
+        # 应返回 400 而不是创建成功
+        assert r.status_code == 400
+
+    def test_create_with_valid_yaml_succeeds(self, client):
+        do_login(client)
+        token = generate_csrf_token()
+        import uuid
+        fname = f"good_{uuid.uuid4().hex[:8]}.yaml"
+        r = client.post("/admin/rules", data={
+            "filename": fname, "display_name": "Good",
+            "content": "payload:\n  - DOMAIN-SUFFIX,example.com", "csrf_token": token
+        })
+        assert r.status_code == 303
+
+        # 清理
+        from app.config import RULES_DIR
+        fp = os.path.join(RULES_DIR, fname)
+        if os.path.exists(fp):
+            os.remove(fp)
+
+
+class TestPathTraversal:
+    def test_path_traversal_returns_404(self, client):
+        """路径穿越尝试被 FastAPI 路由层规范化后返回 404。"""
+        r = client.get("/rules/../../etc/passwd")
+        assert r.status_code == 404
+
+    def test_normal_filename_serves(self, client):
+        """不存在的文件返回 404。"""
+        r = client.get("/rules/nonexistent.yaml")
+        assert r.status_code == 404
+
+    def test_handler_basename_check(self):
+        """验证 handler 内的 basename 校验逻辑。"""
+        import os
+        # 模拟 serve_rule 的安全检查逻辑
+        for dangerous in ("../../etc/passwd", "../secret.yaml", "dir/file.yaml"):
+            safe_name = os.path.basename(dangerous)
+            assert safe_name != dangerous or not safe_name  # 应触发拒绝

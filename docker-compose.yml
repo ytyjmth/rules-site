@@ -8,12 +8,11 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - ADMIN_USERNAME=admin
-      # ⚠️ 必须设置以下两项，否则容器会启动失败
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - SECRET_KEY=${SECRET_KEY}
-      - SITE_TITLE=规则文档
-      - SITE_NAME=雨天依旧美
-      - SITE_VERSION=1.0.0
-      - SITE_AI_MODEL=
-      - SITE_ICP=陕ICP备2020016374号
+      - SITE_TITLE=${SITE_TITLE}
+      - SITE_NAME=${SITE_NAME}
+      - SITE_VERSION=${SITE_VERSION}
+      - SITE_AI_MODEL=${SITE_AI_MODEL}
+      - SITE_ICP=${SITE_ICP}

@@ -46,7 +46,22 @@ def test_exits_on_weak_password():
         cwd=os.path.dirname(os.path.dirname(__file__)),
     )
     assert result.returncode == 1
-    assert "changeme" in result.stdout
+    assert "弱密码" in result.stdout or "changeme" in result.stdout
+
+
+def test_exits_on_short_password():
+    """短密码 → 退出码 1"""
+    env = os.environ.copy()
+    env["DATA_DIR"] = os.path.join(os.path.dirname(__file__), "data")
+    env["SECRET_KEY"] = "valid-key"
+    env["ADMIN_PASSWORD"] = "short"
+    result = subprocess.run(
+        [sys.executable, "-c", "from app.config import check_security; check_security()"],
+        capture_output=True, text=True, env=env,
+        cwd=os.path.dirname(os.path.dirname(__file__)),
+    )
+    assert result.returncode == 1
+    assert "长度不足" in result.stdout
 
 
 def test_exits_on_weak_secret_key():

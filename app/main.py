@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.database import init_db
+from app.database import init_db, sync_rules
 from app.routes_public import router as public_router
 from app.routes_admin import router as admin_router
 from app.config import check_security
@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时执行
     init_db()
+    sync_rules()
     check_security()
     yield
     # 关闭时执行（如需要）

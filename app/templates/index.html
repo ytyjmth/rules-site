@@ -19,12 +19,24 @@
             <div class="subtitle">专属订阅规则库</div>
         </div>
 
+        <form class="search-bar" method="get" action="/">
+            <input type="text" name="q" value="{{ q }}" placeholder="搜索规则名称或文件名…" autocomplete="off">
+            <button type="submit">搜索</button>
+        </form>
+
+        {% if q %}
+        <div class="search-meta">
+            找到 {{ total }} 条匹配「{{ q }}」
+            <a href="/">清除筛选</a>
+        </div>
+        {% endif %}
+
         {% if rules %}
             {% for rule in rules %}
             <div class="rule-card">
-                <div class="rule-number">No.{{ loop.index }}</div>
                 <div class="rule-top">
                     <div>
+                        <div class="rule-number">No.{{ loop.index }}</div>
                         <div class="rule-name">
                             {{ rule.display_name or rule.filename }}
                             <code>{{ rule.filename }}</code>
@@ -57,6 +69,28 @@
                 <div style="font-size:2.4em; margin-bottom:12px;">📜</div>
                 <em>档案室空空如也</em>
             </div>
+        {% endif %}
+
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="/?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}" class="page-btn">‹ 上一页</a>
+            {% endif %}
+
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == page %}
+                <span class="page-btn active">{{ p }}</span>
+                {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                <a href="/?page={{ p }}{% if q %}&q={{ q }}{% endif %}" class="page-btn">{{ p }}</a>
+                {% elif p == page - 3 or p == page + 3 %}
+                <span class="page-btn dots">…</span>
+                {% endif %}
+            {% endfor %}
+
+            {% if page < total_pages %}
+            <a href="/?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}" class="page-btn">下一页 ›</a>
+            {% endif %}
+        </div>
         {% endif %}
 
         <footer>

@@ -33,8 +33,13 @@ def check_security():
 
     if not ADMIN_PASSWORD:
         errors.append("ADMIN_PASSWORD 未设置，请设置为强密码")
-    elif ADMIN_PASSWORD == "changeme":
-        errors.append("ADMIN_PASSWORD 使用了不安全的默认值 'changeme'，请更换")
+    elif len(ADMIN_PASSWORD) < 8:
+        errors.append("ADMIN_PASSWORD 长度不足 8 位，请使用更强的密码")
+    elif ADMIN_PASSWORD.lower() in (
+        "changeme", "password", "12345678", "admin123", "admin888",
+        "qwerty123", "password1", "p@ssw0rd", "letmein1",
+    ):
+        errors.append(f"ADMIN_PASSWORD 使用了常见弱密码，请更换")
 
     if errors:
         print("\n" + "=" * 70)
