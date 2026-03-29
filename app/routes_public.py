@@ -4,7 +4,8 @@ from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from app.auth import generate_csrf_token
 from app.database import get_db
-from app.config import RULES_DIR, SITE_TITLE, SITE_NAME, SITE_VERSION, SITE_ICP, SITE_AI_MODEL
+from app.config import RULES_DIR
+from app.utils import escape_like, build_template_context
 import os
 
 router = APIRouter()
@@ -16,11 +17,6 @@ templates.env.autoescape = True
 templates.env.globals["csrf_token"] = generate_csrf_token
 
 
-def _escape_like(s: str) -> str:
-    """转义 LIKE 通配符，防止用户输入 % _ 被当作模式匹配。"""
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
 @router.get("/")
 def index(request: Request, q: str = "", page: int = 1):
     per_page = 5
@@ -28,7 +24,7 @@ def index(request: Request, q: str = "", page: int = 1):
 
     with get_db() as conn:
         if q:
-            escaped_q = _escape_like(q)
+            escaped_q = escape_like(q)
             keyword = f"%{escaped_q}%"
             total = conn.execute(
                 "SELECT COUNT(*) FROM rules WHERE filename LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'",
@@ -62,19 +58,17 @@ def index(request: Request, q: str = "", page: int = 1):
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "rules": rules,
-        "q": q,
-        "page": page,
-        "total_pages": total_pages,
-        "total": total,
-        "site_title": SITE_TITLE,
-        "site_name": SITE_NAME,
-        "site_version": SITE_VERSION,
-        "site_icp": SITE_ICP,
-        "site_ai_model": SITE_AI_MODEL,
-    })
+    return templates.TemplateResponse(
+        "index.html",
+        build_template_context(
+            request=request,
+            rules=rules,
+            q=q,
+            page=page,
+            total_pages=total_pages,
+            total=total,
+        ),
+    )
 
 
 @router.get("/rules/{filename:path}")

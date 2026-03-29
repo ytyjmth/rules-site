@@ -8,12 +8,13 @@ import time
 import yaml
 from collections import defaultdict
 
-from app.config import ADMIN_USERNAME, ADMIN_PASSWORD, RULES_DIR, SITE_TITLE, SITE_NAME, SITE_VERSION, SITE_ICP, SITE_AI_MODEL
+from app.config import ADMIN_USERNAME, ADMIN_PASSWORD, RULES_DIR
 from app.database import get_db, sync_rules
 from app.auth import (
     create_login_token, require_admin_redirect, get_current_user,
     generate_csrf_token, validate_csrf,
 )
+from app.utils import escape_like, build_template_context
 
 router = APIRouter(prefix="/admin")
 
@@ -56,11 +57,6 @@ def _is_valid_yaml(data: bytes) -> bool:
         return False
 
 
-def _escape_like(s: str) -> str:
-    """转义 LIKE 通配符，防止用户输入 % _ 被当作模式匹配。"""
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
 def _is_secure_connection(request: Request) -> bool:
     """判断客户端是否通过 HTTPS 连接（兼容反向代理）。"""
     if request.url.scheme == "https":
@@ -70,30 +66,10 @@ def _is_secure_connection(request: Request) -> bool:
 
 
 # ── 辅助 ────────────────────────────────────────────────
-def _site_context(request: Request, **extra) -> dict:
-    """构建模板公共上下文。"""
-    ctx = {
-        "request": request,
-        "rules": extra.pop("rules", []),
-        "error": extra.pop("error", None),
-        "q": extra.pop("q", ""),
-        "page": extra.pop("page", 1),
-        "total_pages": extra.pop("total_pages", 1),
-        "total": extra.pop("total", 0),
-        "site_title": SITE_TITLE,
-        "site_name": SITE_NAME,
-        "site_version": SITE_VERSION,
-        "site_icp": SITE_ICP,
-        "site_ai_model": SITE_AI_MODEL,
-    }
-    ctx.update(extra)
-    return ctx
-
-
 def _error_response(request: Request, error_msg: str, status_code: int = 400):
     return templates.TemplateResponse(
         "admin.html",
-        _site_context(request=request, error=error_msg),
+        build_template_context(request=request, error=error_msg),
         status_code=status_code,
     )
 
@@ -157,7 +133,7 @@ def dashboard(request: Request, q: str = "", page: int = 1):
 
     with get_db() as conn:
         if q:
-            escaped_q = _escape_like(q)
+            escaped_q = escape_like(q)
             keyword = f"%{escaped_q}%"
             total = conn.execute(
                 "SELECT COUNT(*) FROM rules WHERE filename LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'",
@@ -185,7 +161,7 @@ def dashboard(request: Request, q: str = "", page: int = 1):
     page = min(page, total_pages)
 
     return templates.TemplateResponse(
-        "admin.html", _site_context(request=request, rules=rules, q=q, page=page, total_pages=total_pages, total=total)
+        "admin.html", build_template_context(request=request, rules=rules, q=q, page=page, total_pages=total_pages, total=total)
     )
 
 
