@@ -50,7 +50,7 @@ def require_admin(request: Request) -> str:
     return user
 
 
-def require_admin_redirect(request: Request):
+def require_admin_redirect(request: Request) -> RedirectResponse | None:
     """Redirect to login if not logged in (for page routes)."""
     user = get_current_user(request)
     if not user:
@@ -87,7 +87,7 @@ def verify_csrf_token(token: str, max_age: int = 3600) -> bool:
         return False
 
 
-def validate_csrf(request: Request, token: str | None):
+def validate_csrf(request: Request, token: str | None) -> None:
     """校验 CSRF token，失败抛 403。"""
     if not token or not verify_csrf_token(token):
         raise HTTPException(status_code=403, detail="CSRF token 无效或已过期")

@@ -34,5 +34,5 @@ app.include_router(admin_router)
 
 
 @app.get("/health")
-def health():
+def health() -> dict[str, str]:
     return {"status": "ok"}

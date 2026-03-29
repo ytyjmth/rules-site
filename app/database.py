@@ -1,8 +1,10 @@
+"""数据库操作。"""
 import sqlite3
 import os
 import glob
 import re
 from contextlib import contextmanager
+from typing import Generator
 from app.config import DB_PATH, RULES_DIR
 
 
@@ -50,7 +52,7 @@ def filename_to_display_name(filename: str) -> str:
 
 
 @contextmanager
-def get_db():
+def get_db() -> Generator[sqlite3.Connection, None, None]:
     """每次调用新建连接，用完自动关闭，避免线程泄漏。"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -67,7 +69,7 @@ def get_db():
         conn.close()
 
 
-def init_db():
+def init_db() -> None:
     with get_db() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS rules (
@@ -82,7 +84,7 @@ def init_db():
         """)
 
 
-def sync_rules():
+def sync_rules() -> dict[str, list[str]]:
     """扫描 RULES_DIR，将磁盘上的 YAML 文件同步到数据库。
 
     元数据提取优先级：

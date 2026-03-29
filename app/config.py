@@ -22,7 +22,7 @@ os.makedirs(RULES_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def check_security():
+def check_security() -> None:
     """检查安全配置，不合规直接退出。"""
     errors = []
 
