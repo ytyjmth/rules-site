@@ -4,7 +4,11 @@ import sys
 # 数据目录（容器内挂载）
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 RULES_DIR = os.path.join(DATA_DIR, "rules")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 DB_PATH = os.path.join(DATA_DIR, "rules.db")
+
+# 备份配置
+MAX_BACKUPS_PER_FILE = 5  # 每个文件保留最近 N 个备份
 
 # 认证（必须通过环境变量设置，无默认值）
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
@@ -19,6 +23,7 @@ SITE_AI_MODEL = os.environ.get("SITE_AI_MODEL", "")
 SECRET_KEY = os.environ.get("SECRET_KEY", "")
 
 os.makedirs(RULES_DIR, exist_ok=True)
+os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 

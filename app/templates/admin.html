@@ -19,11 +19,9 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" style="border:none;background:none;color:var(--ink-faint);font-size:.65em;cursor:pointer;opacity:.4;transition:opacity .15s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.4" title="扫描 data/rules/ 目录同步文件到数据库">⟳ 同步</button>
                 </form>
+                <a href="/admin/logs">审计日志</a>
                 <a href="/">查看前台</a>
-                <form method="post" action="/admin/logout" style="display:inline">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" style="border:none;background:none;color:inherit;font:inherit;cursor:pointer;text-decoration:underline;">退出登录</button>
-                </form>
+                <a href="#" id="logoutBtn">退出登录</a>
             </div>
         </div>
 
@@ -144,7 +142,7 @@
     <div class="modal-overlay" id="editModal">
         <div class="modal">
             <h2>编辑规则 <code id="editFilename" style="font-family:'JetBrains Mono',monospace; font-size:.7em; color:var(--ink-faint);"></code></h2>
-            <form method="post" id="editForm">
+            <form method="post" id="editForm" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
@@ -226,6 +224,21 @@
     });
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeEdit();
+    });
+
+    // ── Logout ──────────────────────────────
+    document.getElementById('logoutBtn').addEventListener('click', function(e) {
+        e.preventDefault();
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/admin/logout';
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'csrf_token';
+        input.value = '{{ csrf_token() }}';
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
     });
 
     // ── Table Sort ──────────────────────────────

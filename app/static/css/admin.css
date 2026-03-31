@@ -40,6 +40,14 @@ body {
     text-transform: uppercase; transition: color .15s;
 }
 .topbar-nav a:hover { color: var(--accent); }
+.topbar-nav form button {
+    border: none; background: none;
+    color: var(--ink-faint); cursor: pointer;
+    font-family: -apple-system, sans-serif;
+    font-size: .65em; opacity: .4;
+    transition: opacity .15s;
+}
+.topbar-nav form button:hover { opacity: 1; }
 
 /* ── Tabs ────────────────────── */
 .tabs {

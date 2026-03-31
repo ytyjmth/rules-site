@@ -2,10 +2,11 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
+from functools import lru_cache
 from app.auth import generate_csrf_token
-from app.database import get_db
+from app.database import search_rules
 from app.config import RULES_DIR
-from app.utils import escape_like, build_template_context
+from app.utils import build_template_context
 import os
 
 router = APIRouter()
@@ -17,46 +18,26 @@ templates.env.autoescape = True
 templates.env.globals["csrf_token"] = generate_csrf_token
 
 
+@lru_cache(maxsize=64)
+def _read_preview(filepath: str, mtime: float) -> tuple[str, int]:
+    """读取文件预览，带 LRU 缓存。mtime 用于缓存失效。"""
+    with open(filepath, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    return "".join(lines[:50]), len(lines)
+
+
 @router.get("/")
 def index(request: Request, q: str = "", page: int = 1):
-    per_page = 5
-    page = max(1, page)
+    rules, total, total_pages = search_rules(q, page, per_page=5)
 
-    with get_db() as conn:
-        if q:
-            escaped_q = escape_like(q)
-            keyword = f"%{escaped_q}%"
-            total = conn.execute(
-                "SELECT COUNT(*) FROM rules WHERE filename LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'",
-                (keyword, keyword, keyword),
-            ).fetchone()[0]
-            offset = (page - 1) * per_page
-            rows = conn.execute(
-                "SELECT * FROM rules WHERE filename LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' ORDER BY sort_order ASC, filename ASC LIMIT ? OFFSET ?",
-                (keyword, keyword, keyword, per_page, offset),
-            ).fetchall()
-        else:
-            total = conn.execute("SELECT COUNT(*) FROM rules").fetchone()[0]
-            offset = (page - 1) * per_page
-            rows = conn.execute(
-                "SELECT * FROM rules ORDER BY sort_order ASC, filename ASC LIMIT ? OFFSET ?",
-                (per_page, offset),
-            ).fetchall()
-
-    rules = [dict(r) for r in rows]
     for rule in rules:
         filepath = os.path.join(RULES_DIR, rule["filename"])
         if os.path.exists(filepath):
-            with open(filepath, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            rule["preview"] = "".join(lines[:50])
-            rule["line_count"] = len(lines)
+            mtime = os.path.getmtime(filepath)
+            rule["preview"], rule["line_count"] = _read_preview(filepath, mtime)
         else:
             rule["preview"] = ""
             rule["line_count"] = 0
-
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
 
     return templates.TemplateResponse(
         "index.html",

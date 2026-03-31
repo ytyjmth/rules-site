@@ -24,8 +24,11 @@ def _verify_token(token: str, max_age: int = 86400 * 7) -> bool:
         if time.time() - int(ts) > max_age:
             return False
         expected = hashlib.sha256(f"{SECRET_KEY}:{username}:{ts}".encode()).hexdigest()[:32]
-        # 使用恒定时间比较，防止时序攻击
-        return hmac.compare_digest(sig, expected)
+        if not hmac.compare_digest(sig, expected):
+            return False
+        # 检查黑名单
+        from app.database import check_token_blacklist
+        return check_token_blacklist(token)
     except (ValueError, IndexError):
         return False
 

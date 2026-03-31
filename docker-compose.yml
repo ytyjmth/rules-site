@@ -3,6 +3,7 @@ services:
     image: rules-site:latest
     container_name: rules-site
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "8600:8000"
     volumes:
@@ -16,3 +17,14 @@ services:
       - SITE_VERSION=${SITE_VERSION}
       - SITE_AI_MODEL=${SITE_AI_MODEL}
       - SITE_ICP=${SITE_ICP}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1.0'

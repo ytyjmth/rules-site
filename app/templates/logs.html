@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>审计日志 - {{ site_title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Source+Serif+4:wght@300;400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <h1>📋 审计日志</h1>
+            <div class="topbar-nav">
+                <a href="/admin/">返回管理面板</a>
+                <a href="/">查看前台</a>
+            </div>
+        </div>
+
+        <div class="card">
+            {% if logs %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>操作</th>
+                        <th>文件</th>
+                        <th>IP</th>
+                        <th>详情</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td class="mono">{{ log.created_at }}</td>
+                        <td>
+                            {% if log.action == 'login' %}
+                            <span class="badge badge-green">登录</span>
+                            {% elif log.action == 'logout' %}
+                            <span class="badge badge-gray">登出</span>
+                            {% elif log.action == 'create' %}
+                            <span class="badge badge-blue">创建</span>
+                            {% elif log.action == 'update' %}
+                            <span class="badge badge-yellow">更新</span>
+                            {% elif log.action == 'delete' %}
+                            <span class="badge badge-red">删除</span>
+                            {% elif log.action == 'sync' %}
+                            <span class="badge badge-purple">同步</span>
+                            {% else %}
+                            <span class="badge">{{ log.action }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="mono">{{ log.filename or '-' }}</td>
+                        <td class="mono">{{ log.ip or '-' }}</td>
+                        <td>{{ log.details or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if total_pages > 1 %}
+            <div class="pagination">
+                {% if page > 1 %}
+                <a href="/admin/logs?page={{ page - 1 }}">← 上一页</a>
+                {% endif %}
+                <span class="page-info">{{ page }} / {{ total_pages }}</span>
+                {% if page < total_pages %}
+                <a href="/admin/logs?page={{ page + 1 }}">下一页 →</a>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <p class="total-count">共 {{ total }} 条记录</p>
+            {% else %}
+            <p class="empty">暂无审计日志</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <style>
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .badge-green { background: #d4edda; color: #155724; }
+        .badge-gray { background: #e9ecef; color: #495057; }
+        .badge-blue { background: #cce5ff; color: #004085; }
+        .badge-yellow { background: #fff3cd; color: #856404; }
+        .badge-red { background: #f8d7da; color: #721c24; }
+        .badge-purple { background: #e8d5f5; color: #5a2d82; }
+        .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .pagination a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .pagination a:hover {
+            text-decoration: underline;
+        }
+        .page-info {
+            color: var(--ink-faint);
+            font-size: 0.9em;
+        }
+        .total-count {
+            text-align: right;
+            color: var(--ink-faint);
+            font-size: 0.85em;
+            margin-top: 1rem;
+        }
+        .empty {
+            text-align: center;
+            color: var(--ink-faint);
+            padding: 2rem;
+        }
+    </style>
+</body>
+</html>

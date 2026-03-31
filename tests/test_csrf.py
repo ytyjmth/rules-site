@@ -1,5 +1,6 @@
 """CSRF 防护测试。"""
 import os
+
 os.environ["DATA_DIR"] = os.path.join(os.path.dirname(__file__), "data")
 os.environ["SECRET_KEY"] = "test-secret-key-for-csrf-tests"
 os.environ["ADMIN_PASSWORD"] = "test-password-for-csrf"

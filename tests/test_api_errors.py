@@ -9,6 +9,10 @@ os.environ["ADMIN_PASSWORD"] = "test-password-for-csrf"
 from fastapi.testclient import TestClient
 from app.main import app
 from app.auth import generate_csrf_token
+from app.database import init_db
+
+# 确保数据库已初始化
+init_db()
 
 client = TestClient(app, follow_redirects=False)
 
