@@ -1,7 +1,7 @@
 # Rules Site — 规则订阅管理站
 
 [![Docker](https://img.shields.io/badge/Docker-ytyjmth%2Frules--site-blue)](https://hub.docker.com/r/ytyjmth/rules-site)
-[![Version](https://img.shields.io/badge/version-v1.0.1-green)](https://github.com/ytyjm/rules-site)
+[![Version](https://img.shields.io/badge/version-v1.0.2-green)](https://github.com/ytyjm/rules-site)
 
 轻量级 Clash/Mihomo 规则文件托管 + 管理面板，支持在线编辑、审计日志、API 接口。
 
@@ -90,7 +90,6 @@ docker compose up -d
 
 镜像特点：
 - 多阶段构建，镜像体积小
-- 非 root 用户运行
 - 内置健康检查
 
 ## 环境变量
