@@ -10,10 +10,13 @@
 使用 Docker Hub 镜像一键部署：
 
 ```bash
+# 创建数据目录
+mkdir -p /opt/rules-site/data
+
 docker run -d \
   --name rules-site \
   -p 8600:8000 \
-  -v ./data:/app/data \
+  -v /opt/rules-site/data:/app/data \
   -e ADMIN_PASSWORD=your_password \
   -e SECRET_KEY=$(openssl rand -hex 32) \
   ytyjmth/rules-site:latest
@@ -23,7 +26,7 @@ docker run -d \
 - 前台：http://localhost:8600
 - 管理：http://localhost:8600/admin
 
-> **注意**：容器默认以非 root 用户运行。如遇权限问题，请执行 `sudo chown -R 1000:1000 ./data` 或在 docker-compose 中添加 `user: "1000:1000"`。
+> **注意**：容器默认以非 root 用户运行。如遇权限问题，请执行 `sudo chown -R 999:999 /opt/rules-site/data`。
 
 ## 功能
 
@@ -49,11 +52,14 @@ docker run -d \
 ### 方式一：Docker Hub 镜像（推荐）
 
 ```bash
+# 创建数据目录
+mkdir -p /opt/rules-site/data
+
 # 直接运行
 docker run -d \
   --name rules-site \
   -p 8600:8000 \
-  -v ./data:/app/data \
+  -v /opt/rules-site/data:/app/data \
   -e ADMIN_PASSWORD=your_password \
   -e SECRET_KEY=$(openssl rand -hex 32) \
   ytyjmth/rules-site:latest
@@ -66,7 +72,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-> **1Panel 部署**：直接使用 docker-compose.yml 即可，无需额外配置权限。
+> **注意**：建议使用绝对路径 `/opt/rules-site/data` 避免权限问题。如果容器内用户权限报错，执行：`sudo chown -R 999:999 /opt/rules-site/data`
 
 ### 方式二：从源码构建
 

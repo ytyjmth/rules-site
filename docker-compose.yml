@@ -6,7 +6,7 @@ services:
     ports:
       - "8600:8000"
     volumes:
-      - ./data:/app/data
+      - /opt/rules-site/data:/app/data
     environment:
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
