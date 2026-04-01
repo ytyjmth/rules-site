@@ -6,7 +6,7 @@ services:
     ports:
       - "8600:8000"
     volumes:
-      - /opt/rules-site/data:/app/data
+      - /opt/1panel/docker/compose/rules-site/data:/app/data
     environment:
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}

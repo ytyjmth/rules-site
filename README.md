@@ -10,13 +10,13 @@
 使用 Docker Hub 镜像一键部署：
 
 ```bash
-# 创建数据目录
-mkdir -p /opt/rules-site/data
+# 创建数据目录（根据实际部署路径调整）
+mkdir -p /opt/1panel/docker/compose/rules-site/data
 
 docker run -d \
   --name rules-site \
   -p 8600:8000 \
-  -v /opt/rules-site/data:/app/data \
+  -v /opt/1panel/docker/compose/rules-site/data:/app/data \
   -e ADMIN_PASSWORD=your_password \
   -e SECRET_KEY=$(openssl rand -hex 32) \
   ytyjmth/rules-site:latest
@@ -26,7 +26,7 @@ docker run -d \
 - 前台：http://localhost:8600
 - 管理：http://localhost:8600/admin
 
-> **注意**：容器默认以非 root 用户运行。如遇权限问题，请执行 `sudo chown -R 999:999 /opt/rules-site/data`。
+> **注意**：容器默认以非 root 用户运行。如遇权限问题，请执行 `sudo chown -R 999:999 /opt/1panel/docker/compose/rules-site/data`。
 
 ## 功能
 
@@ -52,14 +52,14 @@ docker run -d \
 ### 方式一：Docker Hub 镜像（推荐）
 
 ```bash
-# 创建数据目录
-mkdir -p /opt/rules-site/data
+# 创建数据目录（根据实际部署路径调整）
+mkdir -p /opt/1panel/docker/compose/rules-site/data
 
 # 直接运行
 docker run -d \
   --name rules-site \
   -p 8600:8000 \
-  -v /opt/rules-site/data:/app/data \
+  -v /opt/1panel/docker/compose/rules-site/data:/app/data \
   -e ADMIN_PASSWORD=your_password \
   -e SECRET_KEY=$(openssl rand -hex 32) \
   ytyjmth/rules-site:latest
@@ -72,7 +72,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-> **注意**：建议使用绝对路径 `/opt/rules-site/data` 避免权限问题。如果容器内用户权限报错，执行：`sudo chown -R 999:999 /opt/rules-site/data`
+> **注意**：请根据实际部署路径修改 volumes 配置。如遇权限问题，执行：`sudo chown -R 999:999 /opt/1panel/docker/compose/rules-site/data`
 
 ### 方式二：从源码构建
 
