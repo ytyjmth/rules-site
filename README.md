@@ -1,6 +1,27 @@
 # Rules Site — 规则订阅管理站
 
+[![Docker](https://img.shields.io/badge/Docker-ytyjmth%2Frules--site-blue)](https://hub.docker.com/r/ytyjmth/rules-site)
+[![Version](https://img.shields.io/badge/version-v1.0.1-green)](https://github.com/ytyjm/rules-site)
+
 轻量级 Clash/Mihomo 规则文件托管 + 管理面板，支持在线编辑、审计日志、API 接口。
+
+## 快速开始
+
+使用 Docker Hub 镜像一键部署：
+
+```bash
+docker run -d \
+  --name rules-site \
+  -p 8600:8000 \
+  -v rules-data:/app/data \
+  -e ADMIN_PASSWORD=your_password \
+  -e SECRET_KEY=$(openssl rand -hex 32) \
+  ytyjmth/rules-site:latest
+```
+
+访问：
+- 前台：http://localhost:8600
+- 管理：http://localhost:8600/admin
 
 ## 功能
 
@@ -21,35 +42,56 @@
 - `GET /admin/api/rules` - 规则列表
 - `GET /admin/api/rules/{id}` - 规则详情
 
-## 快速部署
+## 部署方式
+
+### 方式一：Docker Hub 镜像（推荐）
 
 ```bash
-# 1. 克隆项目
-git clone <repo> /opt/rules-site
-cd /opt/rules-site
+# 直接运行
+docker run -d \
+  --name rules-site \
+  -p 8600:8000 \
+  -v rules-data:/app/data \
+  -e ADMIN_PASSWORD=your_password \
+  -e SECRET_KEY=$(openssl rand -hex 32) \
+  ytyjmth/rules-site:latest
 
-# 2. 配置环境变量
+# 或使用 docker-compose
+curl -O https://raw.githubusercontent.com/ytyjm/rules-site/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/ytyjm/rules-site/main/.env.example
 cp .env.example .env
-# 编辑 .env，修改 ADMIN_PASSWORD 和 SECRET_KEY
-
-# 3. 生成 SECRET_KEY
-openssl rand -hex 32
-
-# 4. 启动
+# 编辑 .env 配置密码
 docker compose up -d
-
-# 5. 访问
-# 前台：http://localhost:8600
-# 管理：http://localhost:8600/admin
-# 审计：http://localhost:8600/admin/logs
 ```
 
-## 1Panel 部署
+### 方式二：从源码构建
+
+```bash
+git clone https://github.com/ytyjm/rules-site.git
+cd rules-site
+cp .env.example .env
+# 编辑 .env，修改 ADMIN_PASSWORD 和 SECRET_KEY
+docker compose up -d
+```
+
+### 方式三：1Panel 部署
 
 1. 进入 1Panel → 容器 → 编排
 2. 新建编排，填入 `docker-compose.yml` 内容
 3. 修改环境变量
 4. 启动并配置反向代理
+
+## Docker 镜像
+
+| 标签 | 说明 |
+|------|------|
+| `latest` | 最新稳定版 |
+| `v1.0.1` | 当前稳定版本 |
+
+镜像特点：
+- 多阶段构建，镜像体积小
+- 非 root 用户运行
+- 内置健康检查
 
 ## 环境变量
 
