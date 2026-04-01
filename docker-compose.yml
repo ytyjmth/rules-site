@@ -1,9 +1,8 @@
 services:
   rules-site:
-    image: rules-site:latest
+    image: ytyjmth/rules-site:latest
     container_name: rules-site
     restart: unless-stopped
-    user: "1000:1000"
     ports:
       - "8600:8000"
     volumes:

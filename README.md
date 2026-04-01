@@ -40,7 +40,7 @@ docker run -d \
 
 ### API 接口
 - `GET /admin/api/rules` - 规则列表
-- `GET /admin/api/rules/{id}` - 规则详情
+- `GET /admin/api/rules/{rule_id}` - 规则详情
 
 ## 部署方式
 
@@ -156,6 +156,7 @@ rules-site/
 │   ├── test_csrf.py       # CSRF 测试
 │   ├── test_database.py   # 数据库测试
 │   ├── test_security.py   # 安全配置测试
+│   ├── test_update.py     # 更新功能测试
 │   └── test_api_errors.py # API 错误处理测试
 ├── Dockerfile             # 多阶段构建 + 非 root
 ├── docker-compose.yml     # 资源限制 + 健康检查
