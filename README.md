@@ -10,14 +10,8 @@
 使用 Docker Hub 镜像一键部署：
 
 ```bash
-# 创建数据目录并设置权限
-mkdir -p ./data
-sudo chown -R 1000:1000 ./data
-
-# 启动容器
 docker run -d \
   --name rules-site \
-  --user 1000:1000 \
   -p 8600:8000 \
   -v ./data:/app/data \
   -e ADMIN_PASSWORD=your_password \
@@ -28,6 +22,8 @@ docker run -d \
 访问：
 - 前台：http://localhost:8600
 - 管理：http://localhost:8600/admin
+
+> **注意**：容器默认以非 root 用户运行。如遇权限问题，请执行 `sudo chown -R 1000:1000 ./data` 或在 docker-compose 中添加 `user: "1000:1000"`。
 
 ## 功能
 
@@ -53,14 +49,9 @@ docker run -d \
 ### 方式一：Docker Hub 镜像（推荐）
 
 ```bash
-# 创建数据目录并设置权限
-mkdir -p ./data
-sudo chown -R 1000:1000 ./data
-
 # 直接运行
 docker run -d \
   --name rules-site \
-  --user 1000:1000 \
   -p 8600:8000 \
   -v ./data:/app/data \
   -e ADMIN_PASSWORD=your_password \
@@ -74,6 +65,8 @@ cp .env.example .env
 # 编辑 .env 配置密码
 docker compose up -d
 ```
+
+> **1Panel 部署**：直接使用 docker-compose.yml 即可，无需额外配置权限。
 
 ### 方式二：从源码构建
 
