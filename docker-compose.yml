@@ -4,7 +4,7 @@ services:
     container_name: rules-site
     restart: unless-stopped
     ports:
-      - "8600:8000"
+      - "127.0.0.1:8600:8000"
     volumes:
       - ./data:/app/data
     environment:
