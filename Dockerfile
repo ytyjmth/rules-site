@@ -14,6 +14,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 复制应用代码
 COPY app/ app/
+COPY cli/ cli/
 COPY start.sh .
 
 EXPOSE 8000

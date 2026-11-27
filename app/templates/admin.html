@@ -32,6 +32,7 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('list',this)">规则列表</button>
             <button class="tab" onclick="switchTab('add',this)">添加规则</button>
+            <button class="tab" onclick="switchTab('tokens',this)">API Token</button>
         </div>
 
         <!-- Tab: 规则列表 -->
@@ -136,6 +137,33 @@
                 </form>
             </div>
         </div>
+
+        <!-- Tab: API Token -->
+        <div id="tab-tokens" class="tab-content">
+            <div class="card">
+                <h2 style="font-family:'Playfair Display',serif; font-size:1.1em; font-weight:700; margin-bottom:8px;">API Token</h2>
+                <p style="font-size:.8em; color:var(--ink-faint); margin-bottom:20px;">
+                    供 agent / CLI 编程调用 REST API（<code>/api/v1/*</code>）。
+                    请求头携带 <code>Authorization: Bearer &lt;token&gt;</code>。明文仅在创建时显示一次。
+                </p>
+                <div id="tokenCreateResult" style="display:none; margin-bottom:16px; padding:12px; border:1px solid var(--border-light); background:var(--paper-deep, #faf8f3); font-family:'JetBrains Mono',monospace; font-size:.75em; word-break:break-all;">
+                    <div style="font-family:inherit; margin-bottom:6px; color:var(--ink);">⚠ 请立即复制保存，关闭后无法再次查看：</div>
+                    <code id="tokenCreateResultCode" style="color:var(--ink);"></code>
+                </div>
+                <form id="tokenCreateForm" style="display:flex; gap:8px; margin-bottom:24px;">
+                    <input type="text" id="tokenName" placeholder="Token 名称（如 ci、my-agent）" required style="flex:1">
+                    <button type="submit" class="btn btn-primary">创建 Token</button>
+                </form>
+                <table id="tokenTable">
+                    <thead>
+                        <tr><th>名称</th><th>创建时间</th><th>最后使用</th><th>状态</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="tokenTableBody">
+                        <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--ink-faint);">加载中…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <!-- 编辑弹窗 -->
@@ -219,6 +247,76 @@
         }
     }
 
+    // ── API Token 管理 ──────────────────────────────
+    async function apiFetch(url, options = {}) {
+        options.headers = Object.assign({'X-CSRF-Token': '{{ csrf_token() }}'}, options.headers || {});
+        const resp = await fetch(url, options);
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || '请求失败');
+        return data;
+    }
+
+    async function loadTokens() {
+        const tbody = document.getElementById('tokenTableBody');
+        try {
+            const data = await apiFetch('/admin/api/tokens');
+            if (!data.tokens.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--ink-faint); font-style:italic;">暂无 Token，创建一个供 agent / CLI 使用</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.tokens.map(t => `
+                <tr>
+                    <td>${escapeHtml(t.name)}</td>
+                    <td>${t.created_at || '-'}</td>
+                    <td>${t.last_used_at || '未使用'}</td>
+                    <td>${t.revoked ? '已撤销' : '有效'}</td>
+                    <td class="actions">${t.revoked ? '' : `<button class="btn btn-sm btn-danger" onclick="revokeToken(${t.id})">撤销</button>`}</td>
+                </tr>`).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--ink-faint);">${escapeHtml(e.message)}</td></tr>`;
+        }
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function createToken(e) {
+        e.preventDefault();
+        const name = document.getElementById('tokenName').value.trim();
+        if (!name) return;
+        try {
+            const data = await apiFetch('/admin/api/tokens', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name}),
+            });
+            document.getElementById('tokenCreateResultCode').textContent = data.token;
+            document.getElementById('tokenCreateResult').style.display = 'block';
+            document.getElementById('tokenName').value = '';
+            loadTokens();
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    async function revokeToken(id) {
+        if (!confirm('确定撤销该 Token？使用它的 agent / CLI 将立即失去访问权限。')) return;
+        try {
+            await apiFetch('/admin/api/tokens/' + id, {method: 'DELETE'});
+            loadTokens();
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    document.getElementById('tokenCreateForm').addEventListener('submit', createToken);
+    // 切换到 Token 页签时刷新列表
+    const origSwitchTab = switchTab;
+    switchTab = function(name, el) {
+        origSwitchTab(name, el);
+        if (name === 'tokens') loadTokens();
+    };
     document.getElementById('editModal').addEventListener('click', function(e) {
         if (e.target === this) closeEdit();
     });

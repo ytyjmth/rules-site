@@ -113,6 +113,18 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_audit_log_created
                 ON audit_log(created_at DESC);
+
+            -- API Token（供 agent / CLI 编程调用）
+            CREATE TABLE IF NOT EXISTS api_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP,
+                revoked INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_tokens_hash
+                ON api_tokens(token_hash);
         """)
 
 
@@ -296,3 +308,55 @@ def sync_rules() -> dict[str, list[str]]:
             removed.append(filename)
 
     return {"added": added, "removed": removed}
+
+
+# ── API Token 管理 ──────────────────────────────────────
+
+def create_api_token(name: str, token_hash: str) -> int:
+    """插入 API Token（只存哈希，明文不落库）。返回记录 id。"""
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO api_tokens (name, token_hash) VALUES (?, ?)",
+            (name, token_hash),
+        )
+        return cur.lastrowid
+
+
+def list_api_tokens() -> list[dict]:
+    """列出所有 API Token（脱敏，不含哈希）。"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, created_at, last_used_at, revoked "
+            "FROM api_tokens ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def revoke_api_token(token_id: int) -> bool:
+    """撤销 API Token。返回是否存在。"""
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE api_tokens SET revoked=1 WHERE id=? AND revoked=0",
+            (token_id,),
+        )
+        return cur.rowcount > 0
+
+
+def find_api_token(token_hash: str) -> dict | None:
+    """按哈希查找有效（未撤销）的 API Token。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, name FROM api_tokens "
+            "WHERE token_hash=? AND revoked=0",
+            (token_hash,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def touch_api_token(token_id: int):
+    """更新 API Token 的最后使用时间。"""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE api_tokens SET last_used_at=CURRENT_TIMESTAMP WHERE id=?",
+            (token_id,),
+        )
