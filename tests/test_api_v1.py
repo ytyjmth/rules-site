@@ -12,7 +12,9 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.auth import generate_csrf_token, generate_api_token, hash_api_token
 from app.config import RULES_DIR, ADMIN_PASSWORD, API_TOKENS as _CFG_API_TOKENS
-from app.database import init_db, create_api_token, get_db
+from app.database import (
+    init_db, create_api_token, get_db, revoke_api_token, purge_revoked_api_tokens,
+)
 
 init_db()
 
@@ -628,3 +630,82 @@ class TestHeaderPrecedence:
         """无效 Token 不应写 last_used（401 即可）。"""
         resp = client.get("/api/v1/rules", headers={"Authorization": "Bearer rs_junk"})
         assert resp.status_code == 401
+
+
+class TestRevokedAtPurge:
+    """撤销时间列与过期清理语义（按撤销时间而非创建时间）。"""
+
+    def test_revoke_sets_revoked_at(self):
+        """撤销时写入 revoked_at。"""
+        token = generate_api_token()
+        token_id = create_api_token("revoked-at-test", hash_api_token(token))
+        assert revoke_api_token(token_id) is True
+
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT revoked, revoked_at FROM api_tokens WHERE id=?", (token_id,)
+            ).fetchone()
+        assert row["revoked"] == 1
+        assert row["revoked_at"] is not None
+
+        with get_db() as conn:
+            conn.execute("DELETE FROM api_tokens WHERE id=?", (token_id,))
+
+    def test_purge_uses_revoked_at_not_created_at(self):
+        """创建于 31 天前但刚撤销的 Token 不被清理；撤销满 30 天的才清理。"""
+        from datetime import datetime, timedelta, timezone
+
+        old = generate_api_token()
+        old_id = create_api_token("purge-old", hash_api_token(old))
+        revoke_api_token(old_id)
+        # 人为把撤销时间回拨 31 天（创建时间是新的也不行，以撤销时间为准）
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=31)).strftime("%Y-%m-%d %H:%M:%S")
+        with get_db() as conn:
+            conn.execute("UPDATE api_tokens SET revoked_at=? WHERE id=?", (old_ts, old_id))
+
+        fresh = generate_api_token()
+        fresh_id = create_api_token("purge-fresh", hash_api_token(fresh))
+        revoke_api_token(fresh_id)
+
+        assert purge_revoked_api_tokens(max_age_days=30) >= 1
+
+        with get_db() as conn:
+            gone = conn.execute("SELECT 1 FROM api_tokens WHERE id=?", (old_id,)).fetchone()
+            kept = conn.execute("SELECT 1 FROM api_tokens WHERE id=?", (fresh_id,)).fetchone()
+        assert gone is None
+        assert kept is not None
+
+        with get_db() as conn:
+            conn.execute("DELETE FROM api_tokens WHERE id=?", (fresh_id,))
+
+    def test_migration_backfills_revoked_at(self):
+        """旧库（无 revoked_at 列）经 init_db 迁移后补列并回填既有撤销记录。"""
+        with get_db() as conn:
+            conn.execute("DROP TABLE api_tokens")
+            conn.execute("""
+                CREATE TABLE api_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP,
+                    revoked INTEGER DEFAULT 0
+                )
+            """)
+            conn.execute(
+                "INSERT INTO api_tokens (name, token_hash, revoked) "
+                "VALUES ('legacy', 'deadbeef', 1)"
+            )
+
+        init_db()
+
+        with get_db() as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(api_tokens)").fetchall()]
+            row = conn.execute(
+                "SELECT revoked_at FROM api_tokens WHERE name='legacy'"
+            ).fetchone()
+        assert "revoked_at" in cols
+        assert row["revoked_at"] is not None
+
+        with get_db() as conn:
+            conn.execute("DELETE FROM api_tokens WHERE name='legacy'")

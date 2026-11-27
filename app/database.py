@@ -122,11 +122,22 @@ def init_db() -> None:
                 token_hash TEXT NOT NULL UNIQUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_used_at TIMESTAMP,
-                revoked INTEGER DEFAULT 0
+                revoked INTEGER DEFAULT 0,
+                revoked_at TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_api_tokens_hash
                 ON api_tokens(token_hash);
         """)
+
+        # 轻量迁移：为旧库补充 revoked_at 列（撤销时间，供过期清理判断）
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(api_tokens)").fetchall()]
+        if "revoked_at" not in cols:
+            conn.execute("ALTER TABLE api_tokens ADD COLUMN revoked_at TIMESTAMP")
+            # 既有已撤销记录的撤销时间未知，以迁移时刻起算，再保留一个清理周期
+            conn.execute(
+                "UPDATE api_tokens SET revoked_at=CURRENT_TIMESTAMP "
+                "WHERE revoked=1 AND revoked_at IS NULL"
+            )
 
 
 _ALLOWED_ORDER_BY = frozenset({
@@ -237,13 +248,13 @@ def cleanup_expired_tokens():
 
 
 def purge_revoked_api_tokens(max_age_days: int = 30) -> int:
-    """清理已撤销超过 N 天的 API Token，防止表无限增长。返回删除行数。"""
+    """清理撤销超过 N 天的 API Token，防止表无限增长。返回删除行数。"""
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=max_age_days)
     ).strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as conn:
         cur = conn.execute(
-            "DELETE FROM api_tokens WHERE revoked=1 AND created_at < ?",
+            "DELETE FROM api_tokens WHERE revoked=1 AND revoked_at < ?",
             (cutoff,),
         )
         return cur.rowcount
@@ -338,17 +349,18 @@ def list_api_tokens() -> list[dict]:
     """列出所有 API Token（脱敏，不含哈希）。"""
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, created_at, last_used_at, revoked "
+            "SELECT id, name, created_at, last_used_at, revoked, revoked_at "
             "FROM api_tokens ORDER BY id DESC"
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 def revoke_api_token(token_id: int) -> bool:
-    """撤销 API Token。返回是否存在。"""
+    """撤销 API Token（记录撤销时间）。返回是否存在且此前未撤销。"""
     with get_db() as conn:
         cur = conn.execute(
-            "UPDATE api_tokens SET revoked=1 WHERE id=? AND revoked=0",
+            "UPDATE api_tokens SET revoked=1, revoked_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND revoked=0",
             (token_id,),
         )
         return cur.rowcount > 0

@@ -139,10 +139,11 @@ def print_json(data) -> None:
 # ── 命令实现 ────────────────────────────────────────────
 
 def cmd_login(args):
-    url = args.url or os.environ.get("RULES_SITE_URL")
-    token = args.token or os.environ.get("RULES_SITE_TOKEN")
+    url = args.url or os.environ.get("RULES_SITE_URL") or load_config().get("url")
+    token = args.token or os.environ.get("RULES_SITE_TOKEN") or load_config().get("token")
     if not url or not token:
-        print("错误：需要 --url 与 --token（或设置 RULES_SITE_URL / RULES_SITE_TOKEN）", file=sys.stderr)
+        print("错误：需要 --url 与 --token（或设置 RULES_SITE_URL / RULES_SITE_TOKEN）",
+              file=sys.stderr)
         return 1
     # 先验证连通性，再落盘，避免留下无效配置
     me = api_request("GET", "/me", url, token)
@@ -326,9 +327,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("login", help="保存并验证配置")
-    p.add_argument("--url", required=True)
-    p.add_argument("--token", required=True)
+    p = sub.add_parser("login", parents=[common],
+                       help="保存并验证配置（--url/--token 也可省略，回退环境变量/已有配置）")
     p.set_defaults(func=cmd_login)
 
     p = sub.add_parser("status", parents=[common], help="查看当前配置与连通性")
@@ -384,9 +384,6 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "login":
-            # login 使用自身参数（--url/--token 为必填），不走全局解析结果
-            args.url = args.url or url
-            args.token = args.token or token
             return args.func(args)
         return args.func(args, url, token)
     except ApiError as e:
