@@ -5,6 +5,7 @@ import glob
 import re
 import time
 import hashlib
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from typing import Generator
 from app.config import DB_PATH, RULES_DIR
@@ -113,7 +114,30 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_audit_log_created
                 ON audit_log(created_at DESC);
+
+            -- API Token（供 agent / CLI 编程调用）
+            CREATE TABLE IF NOT EXISTS api_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP,
+                revoked INTEGER DEFAULT 0,
+                revoked_at TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_tokens_hash
+                ON api_tokens(token_hash);
         """)
+
+        # 轻量迁移：为旧库补充 revoked_at 列（撤销时间，供过期清理判断）
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(api_tokens)").fetchall()]
+        if "revoked_at" not in cols:
+            conn.execute("ALTER TABLE api_tokens ADD COLUMN revoked_at TIMESTAMP")
+            # 既有已撤销记录的撤销时间未知，以迁移时刻起算，再保留一个清理周期
+            conn.execute(
+                "UPDATE api_tokens SET revoked_at=CURRENT_TIMESTAMP "
+                "WHERE revoked=1 AND revoked_at IS NULL"
+            )
 
 
 _ALLOWED_ORDER_BY = frozenset({
@@ -220,9 +244,20 @@ def revoke_token(token: str):
 def cleanup_expired_tokens():
     """清理过期的黑名单 token。"""
     with get_db() as conn:
-        conn.execute(
-            "DELETE FROM token_blacklist WHERE expires_at < strftime('%s', 'now')"
+        conn.execute("DELETE FROM token_blacklist WHERE expires_at < ?", (time.time(),))
+
+
+def purge_revoked_api_tokens(max_age_days: int = 30) -> int:
+    """清理撤销超过 N 天的 API Token，防止表无限增长。返回删除行数。"""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    ).strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM api_tokens WHERE revoked=1 AND revoked_at < ?",
+            (cutoff,),
         )
+        return cur.rowcount
 
 
 def log_audit(action: str, username: str, filename: str = None, ip: str = None, details: str = None):
@@ -296,3 +331,63 @@ def sync_rules() -> dict[str, list[str]]:
             removed.append(filename)
 
     return {"added": added, "removed": removed}
+
+
+# ── API Token 管理 ──────────────────────────────────────
+
+def create_api_token(name: str, token_hash: str) -> int:
+    """插入 API Token（只存哈希，明文不落库）。返回记录 id。"""
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO api_tokens (name, token_hash) VALUES (?, ?)",
+            (name, token_hash),
+        )
+        return cur.lastrowid
+
+
+def list_api_tokens() -> list[dict]:
+    """列出所有 API Token（脱敏，不含哈希）。"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, created_at, last_used_at, revoked, revoked_at "
+            "FROM api_tokens ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def revoke_api_token(token_id: int) -> bool:
+    """撤销 API Token（记录撤销时间）。返回是否存在且此前未撤销。"""
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE api_tokens SET revoked=1, revoked_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND revoked=0",
+            (token_id,),
+        )
+        return cur.rowcount > 0
+
+
+def find_api_token(token_hash: str) -> dict | None:
+    """按哈希查找有效（未撤销）的 API Token。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, name FROM api_tokens "
+            "WHERE token_hash=? AND revoked=0",
+            (token_hash,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def touch_api_token(token_id: int, min_interval: int = 60):
+    """更新 API Token 的最后使用时间。
+
+    距上次更新不足 min_interval 秒则跳过写入，避免高频请求每打一连接。
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(seconds=min_interval)
+    ).strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE api_tokens SET last_used_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND (last_used_at IS NULL OR last_used_at <= ?)",
+            (token_id, cutoff),
+        )

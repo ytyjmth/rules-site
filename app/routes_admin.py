@@ -3,11 +3,8 @@ from fastapi import APIRouter, Request, Form, UploadFile, File, HTTPException, D
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 import os
-import re
 import shutil
 import glob
-import yaml
-from datetime import datetime
 
 from app.config import (
     ADMIN_USERNAME, ADMIN_PASSWORD, RULES_DIR, BACKUP_DIR, MAX_BACKUPS_PER_FILE,
@@ -20,6 +17,10 @@ from app.database import (
 from app.auth import (
     create_login_token, require_admin_redirect, get_current_user,
     generate_csrf_token, validate_csrf,
+)
+from app.rules_ops import (
+    validate_filename, is_valid_yaml, backup_file,
+    strip_meta_comments, wrap_with_meta, MAX_FILE_SIZE,
 )
 from app.utils import build_template_context
 
@@ -38,29 +39,6 @@ async def _optional_file(file: UploadFile = File(default=None)):
     if file and file.filename:
         return file
     return None
-
-
-# ── 文件上传限制 ─────────────────────────────────────────
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-MAX_YAML_PARSE_SIZE = 1 * 1024 * 1024  # YAML 解析最大 1MB，防止 DoS
-FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-.]+\.ya?ml$')
-
-
-def _validate_filename(filename: str) -> bool:
-    return bool(FILENAME_PATTERN.match(filename))
-
-
-def _is_valid_yaml(data: bytes) -> bool:
-    """检查内容是否为合法 YAML。限制解析大小防止 DoS。"""
-    try:
-        decoded = data.decode("utf-8")
-        # 限制 YAML 解析大小，防止深度嵌套攻击
-        if len(decoded) > MAX_YAML_PARSE_SIZE:
-            return False
-        yaml.safe_load(decoded)
-        return True
-    except (yaml.YAMLError, UnicodeDecodeError):
-        return False
 
 
 def _is_secure_connection(request: Request) -> bool:
@@ -92,27 +70,8 @@ def _error_response(request: Request, error_msg: str, status_code: int = 400):
 
 
 def _backup_file(filepath: str):
-    """编辑前备份当前版本，保留最近 N 个备份。"""
-    if not os.path.exists(filepath):
-        return
-
-    filename = os.path.basename(filepath)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = os.path.join(BACKUP_DIR, f"{filename}.{ts}.bak")
-
-    try:
-        shutil.copy2(filepath, backup_path)
-    except OSError:
-        pass  # 备份失败不影响主流程
-
-    # 清理旧备份，保留最近 N 个
-    pattern = os.path.join(BACKUP_DIR, f"{filename}.*.bak")
-    backups = sorted(glob.glob(pattern), reverse=True)
-    for old_backup in backups[MAX_BACKUPS_PER_FILE:]:
-        try:
-            os.remove(old_backup)
-        except OSError:
-            pass
+    """编辑前备份当前版本（委托给 rules_ops.backup_file）。"""
+    backup_file(filepath)
 
 
 # ── Login ──────────────────────────────────────────────
@@ -204,7 +163,7 @@ async def create_rule(
     if not filename.endswith((".yaml", ".yml")):
         filename += ".yaml"
 
-    if not _validate_filename(filename):
+    if not validate_filename(filename):
         return _error_response(request, f"文件名 '{filename}' 不合法，只允许字母、数字、下划线、连字符和点")
 
     # 校验空内容
@@ -216,19 +175,14 @@ async def create_rule(
         data = await file.read()
         if len(data) > MAX_FILE_SIZE:
             return _error_response(request, f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）")
-        if not _is_valid_yaml(data):
+        if not is_valid_yaml(data):
             return _error_response(request, "上传文件内容不是合法的 YAML 格式")
     else:
         data = content.encode("utf-8")
-        if content.strip() and not _is_valid_yaml(data):
+        if content.strip() and not is_valid_yaml(data):
             return _error_response(request, "规则内容不是合法的 YAML 格式")
 
-    # 生成带注释头的文件内容
-    def _wrap_with_meta(content_bytes: bytes, title: str, desc: str) -> bytes:
-        header = f"# title: {title}\n# description: {desc}\n\n"
-        return header.encode("utf-8") + content_bytes
-
-    file_data = _wrap_with_meta(data, display_name, description)
+    file_data = wrap_with_meta(data.decode("utf-8"), display_name, description).encode("utf-8")
 
     filepath = os.path.join(RULES_DIR, filename)
     if os.path.exists(filepath):
@@ -290,30 +244,7 @@ async def update_rule(
     filepath = os.path.join(RULES_DIR, rule["filename"])
 
     # 编辑前备份当前版本
-    _backup_file(filepath)
-
-    def _strip_meta_comments(text: str) -> str:
-        """移除文件头部的 # title: / # description: 注释，返回纯内容。"""
-        lines = text.split("\n")
-        result_lines = []
-        skipped_header = True
-        for line in lines:
-            if skipped_header and re.match(r"^\s*#\s*(title|description)\s*[:：]", line, re.IGNORECASE):
-                continue
-            elif skipped_header and re.match(r"^\s*#\s*$", line):
-                # 空注释行也跳过
-                continue
-            else:
-                skipped_header = False
-                result_lines.append(line)
-        # 去掉开头多余空行
-        while result_lines and not result_lines[0].strip():
-            result_lines.pop(0)
-        return "\n".join(result_lines)
-
-    def _wrap_with_meta(content: str, title: str, desc: str) -> str:
-        header = f"# title: {title}\n# description: {desc}\n\n"
-        return header + content
+    backup_file(filepath)
 
     if file and file.filename:
         data = await file.read()
@@ -323,17 +254,17 @@ async def update_rule(
                 f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）",
             )
         raw = data.decode("utf-8")
-        raw = _strip_meta_comments(raw)
-        if raw.strip() and not _is_valid_yaml(raw.encode("utf-8")):
+        raw = strip_meta_comments(raw)
+        if raw.strip() and not is_valid_yaml(raw.encode("utf-8")):
             return _error_response(request, "上传文件内容不是合法的 YAML 格式")
-        wrapped = _wrap_with_meta(raw, final_display_name, final_description)
+        wrapped = wrap_with_meta(raw, final_display_name, final_description)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(wrapped)
     elif content is not None and content.strip():
-        if not _is_valid_yaml(content.encode("utf-8")):
+        if not is_valid_yaml(content.encode("utf-8")):
             return _error_response(request, "规则内容不是合法的 YAML 格式")
-        content = _strip_meta_comments(content)
-        wrapped = _wrap_with_meta(content, final_display_name, final_description)
+        content = strip_meta_comments(content)
+        wrapped = wrap_with_meta(content, final_display_name, final_description)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(wrapped)
     elif display_name is not None or description is not None:
@@ -341,8 +272,8 @@ async def update_rule(
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
                 raw = f.read()
-            raw = _strip_meta_comments(raw)
-            wrapped = _wrap_with_meta(raw, final_display_name, final_description)
+            raw = strip_meta_comments(raw)
+            wrapped = wrap_with_meta(raw, final_display_name, final_description)
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(wrapped)
 

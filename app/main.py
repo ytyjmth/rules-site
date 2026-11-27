@@ -3,9 +3,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from starlette.staticfiles import StaticFiles
-from app.database import init_db, sync_rules, get_db, cleanup_expired_tokens
+from app.database import init_db, sync_rules, get_db, cleanup_expired_tokens, purge_revoked_api_tokens
 from app.routes_public import router as public_router
 from app.routes_admin import router as admin_router
+from app.routes_api import router as api_router
 from app.config import check_security
 
 # 获取当前文件所在目录，用于构造绝对路径
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     init_db()
     cleanup_expired_tokens()
+    purge_revoked_api_tokens()
     sync_rules()
     check_security()
     yield
@@ -46,6 +48,7 @@ app.mount("/static", CachedStaticFiles(directory=static_dir), name="static")
 
 app.include_router(public_router)
 app.include_router(admin_router)
+app.include_router(api_router)
 
 
 @app.get("/health")
