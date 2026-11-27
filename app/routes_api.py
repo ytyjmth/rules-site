@@ -215,6 +215,10 @@ async def api_update_rule(rule_id: int, rule: RuleUpdateRequest, request: Reques
     final_display_name = _sanitize_meta(final_display_name, _META_TITLE_MAX)
     final_description = _sanitize_meta(final_description, _META_DESC_MAX)
 
+    # 元数据校验必须在备份/写盘之前，否则 400 时文件已被改写、与 DB 不一致
+    if rule.display_name is not None and not final_display_name:
+        raise HTTPException(400, "显示名称不能为空")
+
     filepath = os.path.join(RULES_DIR, rule_dict["filename"])
 
     if rule.content is not None:
@@ -248,8 +252,6 @@ async def api_update_rule(rule_id: int, rule: RuleUpdateRequest, request: Reques
         with get_db() as conn:
             field_map: dict[str, str] = {}
             if rule.display_name is not None:
-                if not final_display_name:
-                    raise HTTPException(400, "显示名称不能为空")
                 field_map["display_name"] = final_display_name
             if rule.description is not None:
                 field_map["description"] = final_description
@@ -258,8 +260,6 @@ async def api_update_rule(rule_id: int, rule: RuleUpdateRequest, request: Reques
             updates.append("updated_at=CURRENT_TIMESTAMP")
             params.append(rule_id)
             conn.execute(f"UPDATE rules SET {', '.join(updates)} WHERE id=?", params)
-    except HTTPException:
-        raise
     except Exception:
         pattern = os.path.join(BACKUP_DIR, f"{os.path.basename(filepath)}.*.bak")
         backups = sorted(glob.glob(pattern), reverse=True)

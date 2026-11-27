@@ -565,6 +565,45 @@ class TestMetaSanitization:
 
         _cleanup_rule(filename)
 
+    def test_update_empty_display_name_rejected_before_write(self):
+        """空 display_name 更新返回 400，且文件头与 DB 均不得被改写（校验先于写盘）。"""
+        resp, filename = _create(display_name="KeepMe")
+        rule_id = resp.json()["id"]
+
+        # 路径一：只改元数据（走文件头重写分支）
+        resp = client.put(
+            f"/api/v1/rules/{rule_id}",
+            headers=AUTH_HEADERS,
+            json={"display_name": "   \n\t"},
+        )
+        assert resp.status_code == 400
+
+        with open(os.path.join(RULES_DIR, filename), "r", encoding="utf-8") as f:
+            saved = f.read()
+        assert "# title: KeepMe" in saved
+
+        detail = client.get(f"/api/v1/rules/{rule_id}", headers=AUTH_HEADERS).json()
+        assert detail["display_name"] == "KeepMe"
+
+        # 路径二：同时更新内容（走内容重写分支）
+        resp = client.put(
+            f"/api/v1/rules/{rule_id}",
+            headers=AUTH_HEADERS,
+            json={"display_name": "   ", "content": "payload:\n  - DOMAIN,changed.org\n"},
+        )
+        assert resp.status_code == 400
+
+        with open(os.path.join(RULES_DIR, filename), "r", encoding="utf-8") as f:
+            saved = f.read()
+        assert "# title: KeepMe" in saved
+        assert "DOMAIN-SUFFIX,example.com" in saved  # 原内容未被覆盖
+
+        detail = client.get(f"/api/v1/rules/{rule_id}", headers=AUTH_HEADERS).json()
+        assert detail["display_name"] == "KeepMe"
+        assert "DOMAIN-SUFFIX,example.com" in detail["content"]
+
+        _cleanup_rule(filename)
+
 
 class TestHeaderPrecedence:
     """P2-3 回归：Bearer 优先，其他 Authorization scheme 不吞掉 X-API-Token。"""
