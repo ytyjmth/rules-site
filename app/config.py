@@ -17,7 +17,7 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 # API Token（供 agent / CLI 编程调用，格式: "名称:token,名称:token" 或裸 token）
 # 例如: API_TOKENS="ci:rs_a1b2...,my-agent:rs_c3d4..."
 def _parse_api_tokens(raw: str) -> dict[str, str]:
-    """解析 API_TOKENS 环境变量为 {名称: token} 映射。"""
+    """解析 API_TOKENS 环境变量为 {名称: token} 映射，误配时打印告警。"""
     tokens: dict[str, str] = {}
     for i, item in enumerate(raw.split(",")):
         item = item.strip()
@@ -28,8 +28,14 @@ def _parse_api_tokens(raw: str) -> dict[str, str]:
             name, token = name.strip(), token.strip()
         else:
             name, token = f"env-{i + 1}", item
-        if name and token:
-            tokens[name] = token
+        if not name or not token:
+            continue
+        if name in tokens:
+            print(f"⚠ API_TOKENS: Token 名称 '{name}' 重复，后者将覆盖前者", file=sys.stderr)
+        elif len(token) < 16:
+            print(f"⚠ API_TOKENS: Token '{name}' 长度不足 16 字符，建议使用随机长 Token"
+                  f"（如 openssl rand -hex 16）", file=sys.stderr)
+        tokens[name] = token
     return tokens
 
 API_TOKENS: dict[str, str] = _parse_api_tokens(os.environ.get("API_TOKENS", ""))

@@ -20,8 +20,9 @@ export RULES_SITE_TOKEN=rs_xxxxxxxxxxxx
 # 方式二：login 保存到 ~/.rules-cli/config.json，之后命令不用再带参数
 python cli/rules_cli.py login --url http://localhost:8600 --token rs_xxx
 
-# 方式三：每次显式传参
+# 方式三：每次显式传参（--url/--token 写在子命令前或后均可）
 python cli/rules_cli.py --url http://localhost:8600 --token rs_xxx list
+python cli/rules_cli.py list --url http://localhost:8600 --token rs_xxx
 ```
 
 先验证连通性，返回身份即为配置成功：
@@ -112,7 +113,10 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/me"
 
 ## 注意事项
 
-- 认证失败统一返回 401（JSON），资源不存在 404，参数不合法 400，重名 409。
+- 认证失败统一返回 401（JSON），Token 管理接口用 Token 访问返回 403（仅限管理员会话），
+  资源不存在 404，参数不合法 400，重名 409。
+- Token 只能由管理员创建（管理面板或 `API_TOKENS` 环境变量），agent 无法自行创建/撤销 Token；
+  若 Token 失效请联系站点管理员。
 - 写操作会记入审计日志，操作者显示为 `api:<token名称>`。
 - Token 明文只在创建时显示一次；在管理面板「API Token」页签可创建/撤销，
   或由管理员通过 `API_TOKENS` 环境变量配置（格式 `名称:token,名称:token`）。

@@ -80,6 +80,21 @@ def strip_meta_comments(text: str) -> str:
 
 
 def wrap_with_meta(content: str, title: str, desc: str) -> str:
-    """生成带注释头的文件内容。"""
-    header = f"# title: {title}\n# description: {desc}\n\n"
+    """生成带注释头的文件内容。
+
+    title/desc 会被单行化并限长，防止换行把内容顶出注释区、注入真实 YAML。
+    """
+    header = (
+        f"# title: {_sanitize_meta(title, _META_TITLE_MAX)}\n"
+        f"# description: {_sanitize_meta(desc, _META_DESC_MAX)}\n\n"
+    )
     return header + content
+
+
+_META_TITLE_MAX = 200
+_META_DESC_MAX = 500
+
+
+def _sanitize_meta(value: str, limit: int) -> str:
+    """单行化（换行/制表符折叠为空格）并截断，杜绝注释区逃逸。"""
+    return " ".join(str(value or "").split())[:limit]

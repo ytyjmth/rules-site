@@ -130,7 +130,7 @@ docker compose up -d
 | `DELETE` | `/api/v1/rules/{id}` | 删除规则（自动备份） |
 | `POST` | `/api/v1/sync` | 扫描目录同步数据库 |
 | `GET` | `/api/v1/logs` | 审计日志 |
-| `GET/POST/DELETE` | `/admin/api/tokens[/{id}]` | Token 管理（脱敏列表/创建/撤销） |
+| `GET/POST/DELETE` | `/admin/api/tokens[/{id}]` | Token 管理（脱敏列表/创建/撤销，**仅限管理员会话**，API Token 不可调用） |
 
 错误统一返回 JSON：401 未认证、400 参数不合法、404 不存在、409 重名。
 
@@ -161,7 +161,7 @@ python cli/rules_cli.py logs                       # 审计日志
 ```
 
 - 配置优先级：`--url/--token` > `RULES_SITE_URL/RULES_SITE_TOKEN` 环境变量 > 配置文件
-- 加 `--json` 输出原始 JSON，便于脚本与 agent 解析
+- `--url/--token/--json` 写在子命令前或后均可；加 `--json` 输出原始 JSON，便于脚本与 agent 解析
 - Docker 容器内：`docker exec rules-site python cli/rules_cli.py list`（URL 用 `http://localhost:8000`）
 
 ### Skill（agent 技能文件）
@@ -176,8 +176,10 @@ python cli/rules_cli.py logs                       # 审计日志
 - Token 可撤销（改密码后旧 token 失效）
 - CSRF 防护
 - API Token 只存哈希，明文仅创建时返回一次，可随时撤销
+- Token 管理接口仅限管理员会话，API Token 无法创建/撤销 Token（防提权与横向撤销）
+- 规则元数据（显示名称/描述）单行化 + 限长，防注释区逃逸注入 YAML
 - Bearer Token 请求天然免疫 CSRF；会话 Cookie 写操作仍需 CSRF 校验
-- YAML 解析大小限制（防 DoS）
+- YAML 解析大小限制（防 DoS，超过 1MB 的 YAML 内容将被拒绝）
 - 操作审计日志
 
 ## 数据备份
@@ -259,6 +261,7 @@ pip install -r requirements.txt
 # 启动开发服务器
 DATA_DIR=./data ADMIN_PASSWORD=test123456 SECRET_KEY=dev python3 -m uvicorn app.main:app --reload
 
-# 运行测试
+# 运行测试（需要测试依赖：pytest / httpx）
+pip install -r requirements-dev.txt
 pytest tests/ -v
 ```

@@ -348,7 +348,7 @@ class TestApiSyncAndLogs:
 
 
 class TestApiTokenManagement:
-    """Token 管理接口测试。"""
+    """Token 管理接口测试（仅管理员会话可用，Bearer 一律 403）。"""
 
     def test_create_and_use_db_token_via_session(self):
         """管理面板登录会话创建 Token，明文可用且只存哈希。"""
@@ -365,7 +365,7 @@ class TestApiTokenManagement:
         token = data["token"]
         assert token.startswith("rs_")
 
-        # 明文 Token 可调用 API
+        # 明文 Token 可调用规则 API
         resp = client.get("/api/v1/rules", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
 
@@ -376,6 +376,40 @@ class TestApiTokenManagement:
         target = [t for t in listing if t["name"] == "agent-x"][0]
         assert "token" not in target and "token_hash" not in target
 
+    def test_bearer_token_create_403(self):
+        """Bearer Token 不能创建新 Token（防提权持久化）。"""
+        resp = client.post(
+            "/admin/api/tokens",
+            headers=AUTH_HEADERS,
+            json={"name": "escalated"},
+        )
+        assert resp.status_code == 403
+
+    def test_bearer_token_revoke_403(self):
+        """Bearer Token 不能撤销任何 Token（防横向 DoS）。"""
+        c = _session_client()
+        _login_session(c)
+        resp = c.post(
+            "/admin/api/tokens",
+            headers={"X-CSRF-Token": generate_csrf_token()},
+            json={"name": "victim"},
+        )
+        token_id = resp.json()["id"]
+
+        resp = client.delete(f"/admin/api/tokens/{token_id}", headers=AUTH_HEADERS)
+        assert resp.status_code == 403
+
+    def test_bearer_token_list_403(self):
+        """Bearer Token 不能列出 Token。"""
+        resp = client.get("/admin/api/tokens", headers=AUTH_HEADERS)
+        assert resp.status_code == 403
+
+    def test_revoked_bearer_token_also_403(self):
+        """连已撤销的 Token 也拿不到 403 之外的提示（不泄露信息）。"""
+        # 未认证直接 401；无效 Token 同样 401
+        resp = client.get("/admin/api/tokens", headers={"Authorization": "Bearer rs_junk"})
+        assert resp.status_code == 401
+
     def test_create_token_without_csrf_403(self):
         """会话写操作缺 CSRF 返回 403。"""
         c = _session_client()
@@ -383,35 +417,25 @@ class TestApiTokenManagement:
         resp = c.post("/admin/api/tokens", json={"name": "no-csrf"})
         assert resp.status_code == 403
 
-    def test_create_token_via_bearer(self):
-        """已持有 Token 的 agent 可再创建新 Token（无 CSRF）。"""
-        resp = client.post(
-            "/admin/api/tokens",
-            headers=AUTH_HEADERS,
-            json={"name": "sub-agent"},
-        )
-        assert resp.status_code == 201
-        sub_token = resp.json()["token"]
-        assert sub_token.startswith("rs_")
-        resp = client.get("/api/v1/rules", headers={"Authorization": f"Bearer {sub_token}"})
-        assert resp.status_code == 200
-
     def test_unauthenticated_token_list_401(self):
         """未认证不能列出 Token。"""
         resp = client.get("/admin/api/tokens")
         assert resp.status_code == 401
 
     def test_revoke_token(self):
-        """撤销后 Token 立即失效。"""
-        resp = client.post(
+        """管理员会话撤销后 Token 立即失效。"""
+        c = _session_client()
+        _login_session(c)
+        resp = c.post(
             "/admin/api/tokens",
-            headers=AUTH_HEADERS,
+            headers={"X-CSRF-Token": generate_csrf_token()},
             json={"name": "short-lived"},
         )
         token_id = resp.json()["id"]
         token = resp.json()["token"]
 
-        resp = client.delete(f"/admin/api/tokens/{token_id}", headers=AUTH_HEADERS)
+        resp = c.delete(f"/admin/api/tokens/{token_id}",
+                        headers={"X-CSRF-Token": generate_csrf_token()})
         assert resp.status_code == 200
         assert resp.json()["revoked"] is True
 
@@ -420,12 +444,19 @@ class TestApiTokenManagement:
 
     def test_revoke_not_found_404(self):
         """撤销不存在的 Token 返回 404。"""
-        resp = client.delete("/admin/api/tokens/99999", headers=AUTH_HEADERS)
+        c = _session_client()
+        _login_session(c)
+        resp = c.delete("/admin/api/tokens/99999",
+                        headers={"X-CSRF-Token": generate_csrf_token()})
         assert resp.status_code == 404
 
     def test_token_create_empty_name_400(self):
         """空名称返回 400。"""
-        resp = client.post("/admin/api/tokens", headers=AUTH_HEADERS, json={"name": "  "})
+        c = _session_client()
+        _login_session(c)
+        resp = c.post("/admin/api/tokens",
+                      headers={"X-CSRF-Token": generate_csrf_token()},
+                      json={"name": "  "})
         assert resp.status_code == 400
 
 
@@ -463,3 +494,98 @@ class TestApiWriteAuth:
         assert resp.status_code == 201
 
         _cleanup_rule(filename)
+
+
+class TestMetaSanitization:
+    """P0-2 回归：元数据不得逃逸注释区注入 YAML。"""
+
+    INJECTION = 'Evil"\nproxy-groups:\n  - name: hacked\n    type: select\n# '
+
+    def test_display_name_injection_sanitized(self):
+        """display_name 含换行时，落盘文件顶层键必须与提交 content 一致。"""
+        import yaml
+
+        resp, filename = _create(
+            display_name=self.INJECTION,
+            description=f"desc{self.INJECTION}",
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        # 响应中的元数据已单行化
+        assert "\n" not in data["display_name"]
+        assert "\n" not in data["description"]
+
+        # 落盘文件解析出的顶层键只有 content 本身的键
+        with open(os.path.join(RULES_DIR, filename), "r", encoding="utf-8") as f:
+            saved = yaml.safe_load(f)
+        assert set(saved.keys()) == {"payload"}
+        assert "proxy-groups" not in saved
+
+        _cleanup_rule(filename)
+
+    def test_display_name_too_long_422(self):
+        """display_name 超长返回 422（Pydantic Field 限长）。"""
+        resp = client.post(
+            "/api/v1/rules",
+            headers=AUTH_HEADERS,
+            json={"filename": _unique_name("toolong"), "display_name": "字" * 201,
+                  "content": VALID_YAML},
+        )
+        assert resp.status_code == 422
+
+    def test_description_too_long_422(self):
+        """description 超长返回 422。"""
+        resp = client.post(
+            "/api/v1/rules",
+            headers=AUTH_HEADERS,
+            json={"filename": _unique_name("toolongdesc"),
+                  "display_name": "ok", "description": "字" * 501,
+                  "content": VALID_YAML},
+        )
+        assert resp.status_code == 422
+
+    def test_update_injection_sanitized(self):
+        """更新元数据同样单行化。"""
+        resp, filename = _create(display_name="Old")
+        rule_id = resp.json()["id"]
+        resp = client.put(
+            f"/api/v1/rules/{rule_id}",
+            headers=AUTH_HEADERS,
+            json={"display_name": self.INJECTION},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "\n" not in data["display_name"]
+        assert "hacked" in data["display_name"]  # 内容保留，仅单行化
+
+        import yaml
+        with open(os.path.join(RULES_DIR, filename), "r", encoding="utf-8") as f:
+            saved = yaml.safe_load(f)
+        assert set(saved.keys()) == {"payload"}
+
+        _cleanup_rule(filename)
+
+
+class TestHeaderPrecedence:
+    """P2-3 回归：Bearer 优先，其他 Authorization scheme 不吞掉 X-API-Token。"""
+
+    def test_x_api_token_with_other_auth_scheme(self):
+        """Authorization: Basic 存在时，X-API-Token 仍然生效。"""
+        resp = client.get(
+            "/api/v1/rules",
+            headers={"Authorization": "Basic dXNlcjpwYXNz", "X-API-Token": ENV_TOKEN},
+        )
+        assert resp.status_code == 200
+
+    def test_bearer_takes_precedence_over_x_api_token(self):
+        """两个头都在时 Bearer 优先。"""
+        resp = client.get(
+            "/api/v1/rules",
+            headers={"Authorization": f"Bearer {ENV_TOKEN}", "X-API-Token": "rs_junk"},
+        )
+        assert resp.status_code == 200
+
+    def test_revoked_token_does_not_touch_last_used(self):
+        """无效 Token 不应写 last_used（401 即可）。"""
+        resp = client.get("/api/v1/rules", headers={"Authorization": "Bearer rs_junk"})
+        assert resp.status_code == 401

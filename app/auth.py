@@ -138,26 +138,15 @@ def verify_api_token(token: str) -> dict | None:
 def get_api_user(request: Request) -> str | None:
     """从请求头提取 API Token 并校验，返回身份标识。
 
-    支持 Authorization: Bearer <token> 或 X-API-Token: <token>。
+    Bearer 优先，其次 X-API-Token（即使存在其他 Authorization scheme）。
     """
     auth = request.headers.get("authorization", "")
     token = ""
     if auth.lower().startswith("bearer "):
         token = auth[7:].strip()
-    elif request.headers.get("x-api-token"):
+    if not token and request.headers.get("x-api-token"):
         token = request.headers["x-api-token"].strip()
     if not token:
         return None
     info = verify_api_token(token)
     return info["user"] if info else None
-
-
-def require_api_user(request: Request) -> str:
-    """API 端点鉴权：Bearer Token 或登录会话均可，失败抛 401。"""
-    api_user = get_api_user(request)
-    if api_user:
-        return api_user
-    user = get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    return user

@@ -5,6 +5,7 @@ import glob
 import re
 import time
 import hashlib
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from typing import Generator
 from app.config import DB_PATH, RULES_DIR
@@ -232,9 +233,20 @@ def revoke_token(token: str):
 def cleanup_expired_tokens():
     """清理过期的黑名单 token。"""
     with get_db() as conn:
-        conn.execute(
-            "DELETE FROM token_blacklist WHERE expires_at < strftime('%s', 'now')"
+        conn.execute("DELETE FROM token_blacklist WHERE expires_at < ?", (time.time(),))
+
+
+def purge_revoked_api_tokens(max_age_days: int = 30) -> int:
+    """清理已撤销超过 N 天的 API Token，防止表无限增长。返回删除行数。"""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    ).strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM api_tokens WHERE revoked=1 AND created_at < ?",
+            (cutoff,),
         )
+        return cur.rowcount
 
 
 def log_audit(action: str, username: str, filename: str = None, ip: str = None, details: str = None):
@@ -353,10 +365,17 @@ def find_api_token(token_hash: str) -> dict | None:
     return dict(row) if row else None
 
 
-def touch_api_token(token_id: int):
-    """更新 API Token 的最后使用时间。"""
+def touch_api_token(token_id: int, min_interval: int = 60):
+    """更新 API Token 的最后使用时间。
+
+    距上次更新不足 min_interval 秒则跳过写入，避免高频请求每打一连接。
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(seconds=min_interval)
+    ).strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as conn:
         conn.execute(
-            "UPDATE api_tokens SET last_used_at=CURRENT_TIMESTAMP WHERE id=?",
-            (token_id,),
+            "UPDATE api_tokens SET last_used_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND (last_used_at IS NULL OR last_used_at <= ?)",
+            (token_id, cutoff),
         )

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from starlette.staticfiles import StaticFiles
-from app.database import init_db, sync_rules, get_db, cleanup_expired_tokens
+from app.database import init_db, sync_rules, get_db, cleanup_expired_tokens, purge_revoked_api_tokens
 from app.routes_public import router as public_router
 from app.routes_admin import router as admin_router
 from app.routes_api import router as api_router
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     init_db()
     cleanup_expired_tokens()
+    purge_revoked_api_tokens()
     sync_rules()
     check_security()
     yield

@@ -7,7 +7,7 @@
      通过 Cookie 的写操作仍需 CSRF；Bearer 请求天然免疫 CSRF，无需校验。
 """
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import os
 import glob
 import shutil
@@ -23,7 +23,8 @@ from app.database import (
 from app.config import RULES_DIR, BACKUP_DIR
 from app.rules_ops import (
     validate_filename, is_valid_yaml, backup_file,
-    strip_meta_comments, wrap_with_meta, MAX_FILE_SIZE,
+    strip_meta_comments, wrap_with_meta, _sanitize_meta,
+    _META_TITLE_MAX, _META_DESC_MAX, MAX_FILE_SIZE,
 )
 
 router = APIRouter()
@@ -32,20 +33,20 @@ router = APIRouter()
 # ── 请求模型 ────────────────────────────────────────────
 
 class RuleCreateRequest(BaseModel):
-    filename: str
-    display_name: str
-    description: str = ""
+    filename: str = Field(max_length=128)
+    display_name: str = Field(max_length=_META_TITLE_MAX)
+    description: str = Field(default="", max_length=_META_DESC_MAX)
     content: str
 
 
 class RuleUpdateRequest(BaseModel):
-    display_name: str | None = None
-    description: str | None = None
+    display_name: str | None = Field(default=None, max_length=_META_TITLE_MAX)
+    description: str | None = Field(default=None, max_length=_META_DESC_MAX)
     content: str | None = None
 
 
 class TokenCreateRequest(BaseModel):
-    name: str
+    name: str = Field(max_length=64)
 
 
 # ── 鉴权辅助 ────────────────────────────────────────────
@@ -70,6 +71,22 @@ def _authenticate_write(request: Request, csrf_token: str | None = None) -> str:
     if not user:
         raise HTTPException(401, "Unauthorized")
     validate_csrf(request, csrf_token or request.headers.get("x-csrf-token"))
+    return user
+
+
+def _require_admin_session(request: Request, csrf_token: str | None = None,
+                           *, csrf_required: bool = False) -> str:
+    """Token 管理类操作只能由管理会话发起（Bearer 不得自我复制/横向撤销）。
+
+    写操作（POST/DELETE）必须带 CSRF；GET 不做 CSRF 校验。
+    """
+    if get_api_user(request):
+        raise HTTPException(403, "Token 管理接口不接受 API Token，请使用管理员会话")
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(401, "Unauthorized")
+    if csrf_required:
+        validate_csrf(request, csrf_token or request.headers.get("x-csrf-token"))
     return user
 
 
@@ -136,6 +153,12 @@ async def api_create_rule(rule: RuleCreateRequest, request: Request):
             400, f"文件名 '{filename}' 不合法，只允许字母、数字、下划线、连字符和点"
         )
 
+    # 元数据单行化 + 限长（防 YAML 注入，双保险：模型 Field 已限长）
+    display_name = _sanitize_meta(rule.display_name, _META_TITLE_MAX)
+    description = _sanitize_meta(rule.description, _META_DESC_MAX)
+    if not display_name:
+        raise HTTPException(400, "显示名称不能为空")
+
     data = rule.content.encode("utf-8")
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(400, f"文件大小超过限制（最大 {MAX_FILE_SIZE // 1024 // 1024}MB）")
@@ -144,21 +167,21 @@ async def api_create_rule(rule: RuleCreateRequest, request: Request):
     if not is_valid_yaml(data):
         raise HTTPException(400, "规则内容不是合法的 YAML 格式")
 
-    file_data = wrap_with_meta(rule.content, rule.display_name, rule.description).encode("utf-8")
+    file_data = wrap_with_meta(rule.content, display_name, description).encode("utf-8")
     filepath = os.path.join(RULES_DIR, filename)
 
-    if os.path.exists(filepath):
+    # 原子创建：并发同名创建时后到者直接失败，不互相覆盖
+    try:
+        with open(filepath, "xb") as f:
+            f.write(file_data)
+    except FileExistsError:
         raise HTTPException(409, f"文件 {filename} 已存在")
-
-    # 原子性：先写文件，再写 DB。DB 写失败回滚文件。
-    with open(filepath, "wb") as f:
-        f.write(file_data)
 
     try:
         with get_db() as conn:
             conn.execute(
                 "INSERT INTO rules (filename, display_name, description) VALUES (?, ?, ?)",
-                (filename, rule.display_name, rule.description),
+                (filename, display_name, description),
             )
     except Exception:
         if os.path.exists(filepath):
@@ -166,7 +189,7 @@ async def api_create_rule(rule: RuleCreateRequest, request: Request):
         raise
 
     try:
-        log_audit("create", username, filename, client_ip, f"display_name={rule.display_name}")
+        log_audit("create", username, filename, client_ip, f"display_name={display_name}")
     except Exception:
         pass
 
@@ -189,9 +212,10 @@ async def api_update_rule(rule_id: int, rule: RuleUpdateRequest, request: Reques
 
     final_display_name = rule.display_name if rule.display_name is not None else rule_dict["display_name"]
     final_description = rule.description if rule.description is not None else rule_dict["description"]
+    final_display_name = _sanitize_meta(final_display_name, _META_TITLE_MAX)
+    final_description = _sanitize_meta(final_description, _META_DESC_MAX)
 
     filepath = os.path.join(RULES_DIR, rule_dict["filename"])
-    backup_file(filepath)
 
     if rule.content is not None:
         if len(rule.content.encode("utf-8")) > MAX_FILE_SIZE:
@@ -200,6 +224,9 @@ async def api_update_rule(rule_id: int, rule: RuleUpdateRequest, request: Reques
             raise HTTPException(400, "规则内容不能为空")
         if not is_valid_yaml(rule.content.encode("utf-8")):
             raise HTTPException(400, "规则内容不是合法的 YAML 格式")
+
+    # 校验全部通过后才备份，避免非法请求挤占备份槽位
+    backup_file(filepath)
 
     if rule.content is not None and rule.content.strip():
         raw = strip_meta_comments(rule.content)
@@ -219,15 +246,20 @@ async def api_update_rule(rule_id: int, rule: RuleUpdateRequest, request: Reques
     # 文件写入成功后再更新数据库，失败时从备份恢复
     try:
         with get_db() as conn:
-            field_map = {
-                "display_name": rule.display_name,
-                "description": rule.description,
-            }
-            updates = [f"{col}=?" for col, val in field_map.items() if val is not None]
-            params = [val for val in field_map.values() if val is not None]
+            field_map: dict[str, str] = {}
+            if rule.display_name is not None:
+                if not final_display_name:
+                    raise HTTPException(400, "显示名称不能为空")
+                field_map["display_name"] = final_display_name
+            if rule.description is not None:
+                field_map["description"] = final_description
+            updates = [f"{col}=?" for col in field_map]
+            params = list(field_map.values())
             updates.append("updated_at=CURRENT_TIMESTAMP")
             params.append(rule_id)
             conn.execute(f"UPDATE rules SET {', '.join(updates)} WHERE id=?", params)
+    except HTTPException:
+        raise
     except Exception:
         pattern = os.path.join(BACKUP_DIR, f"{os.path.basename(filepath)}.*.bak")
         backups = sorted(glob.glob(pattern), reverse=True)
@@ -303,19 +335,20 @@ def api_logs(request: Request, page: int = 1, per_page: int = 20):
 
 
 # ── API Token 管理 ─────────────────────────────────────
-# 路径挂在 /admin/api/tokens 下，供管理面板与已持有 Token 的 agent 管理。
+# 路径挂在 /admin/api/tokens 下，只认管理员登录会话（Cookie + CSRF）。
+# Bearer 一律 403：防止任意 Token 自我复制（提权持久化）或横向撤销他人 Token。
 
 @router.get("/admin/api/tokens")
 def api_list_tokens(request: Request):
     """列出 API Token（脱敏，不含明文与哈希）。"""
-    _authenticate(request)
+    _require_admin_session(request)
     return {"tokens": list_api_tokens()}
 
 
 @router.post("/admin/api/tokens", status_code=201)
 async def api_create_token(body: TokenCreateRequest, request: Request):
     """创建 API Token。明文仅在响应中返回一次，服务端只保存哈希。"""
-    username = _authenticate_write(request)
+    username = _require_admin_session(request, csrf_required=True)
     client_ip = _client_ip(request)
 
     name = body.name.strip()
@@ -338,7 +371,7 @@ async def api_create_token(body: TokenCreateRequest, request: Request):
 @router.delete("/admin/api/tokens/{token_id}")
 async def api_revoke_token(token_id: int, request: Request):
     """撤销 API Token（标记 revoked，不再可用）。"""
-    username = _authenticate_write(request)
+    username = _require_admin_session(request, csrf_required=True)
     client_ip = _client_ip(request)
 
     if not revoke_api_token(token_id):
